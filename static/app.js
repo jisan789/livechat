@@ -18,9 +18,6 @@ const emojiPopover       = document.getElementById('emojiPopover');
 const emojiBtn           = document.getElementById('emojiBtn');
 const inputPill          = document.getElementById('inputPill');
 const inputNormalContent = document.getElementById('inputNormalContent');
-const inputRecordingContent = document.getElementById('inputRecordingContent');
-const recordingTimer     = document.getElementById('recordingTimer');
-const cancelRecordBtn    = document.getElementById('cancelRecordBtn');
 
 const soundToggleBtn     = document.getElementById('soundToggleBtn');
 const clearChatBtn       = document.getElementById('clearChatBtn');
@@ -102,11 +99,6 @@ let isCallActive    = false;
 let isCallMinimized = false;
 let callTimer       = null;
 let callSeconds     = 0;
-
-// Recording state
-let isRecording       = false;
-let recordingSeconds  = 0;
-let recordingInterval = null;
 
 // Typing state
 let typingOutTimer    = null;
@@ -304,9 +296,6 @@ async function loadChatHistory(userKey) {
       if (msg.msg_type === 'chat') {
         appendMessage(msg.text_content, type, timeStr, msgIdStr);
         appendedAny = true;
-      } else if (msg.msg_type === 'voice') {
-        appendVoiceMessage(msg.media_duration || 1, type, timeStr, msgIdStr);
-        appendedAny = true;
       }
       existingMsgIds.add(msgIdStr);
     }
@@ -416,12 +405,6 @@ function handleWsMessage(msg) {
     case 'chat_cleared':
       clearChatDOM();
       showToast('Chat history cleared', 'info');
-      break;
-
-    // ── Image message ─────────────────────────────
-    // ── Voice note ────────────────────────────────
-    case 'voice':
-      appendVoiceMessage(msg.duration, 'incoming', msg.time, msg.id);
       break;
 
     // ── Live real-time typing preview ─────────────
@@ -702,78 +685,7 @@ function scrollToBottom() {
   setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 40);
 }
 
-// ─────────────────────────────────────────────────
-//  Voice Notes
-// ─────────────────────────────────────────────────
-function appendVoiceMessage(seconds, type = 'outgoing', timeStr = null, messageId = null) {
-  if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
-    return;
-  }
-  const durationText = formatDuration(seconds);
-  const messageRow = document.createElement('div');
-  messageRow.className = `message-row ${type}`;
-  if (messageId) {
-    messageRow.dataset.msgId = messageId;
-  }
 
-  const bubbleGroup = document.createElement('div');
-  bubbleGroup.className = 'bubble-group';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-
-  const heights = [6,14,22,10,18,24,16,12,20,8,15,22,9,14];
-  const barsHtml = heights.map(h => `<span style="height:${h}px;"></span>`).join('');
-
-  bubble.innerHTML = `
-    <div class="voice-bubble">
-      <button class="voice-play-btn" type="button" aria-label="Play Voice Note">
-        <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 19 12 6 20 6 4"></polygon></svg>
-        <svg class="pause-icon" style="display:none;" viewBox="0 0 24 24" fill="currentColor">
-          <rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>
-        </svg>
-      </button>
-      <div class="voice-waveform">${barsHtml}</div>
-      <span class="voice-duration">${durationText}</span>
-    </div>`;
-
-  const voiceBubble = bubble.querySelector('.voice-bubble');
-  const playBtn     = bubble.querySelector('.voice-play-btn');
-  const playIcon    = bubble.querySelector('.play-icon');
-  const pauseIcon   = bubble.querySelector('.pause-icon');
-  let isPlaying = false, playTimer = null;
-
-  playBtn.addEventListener('click', () => {
-    isPlaying = !isPlaying;
-    if (isPlaying) {
-      voiceBubble.classList.add('playing');
-      playIcon.style.display  = 'none';
-      pauseIcon.style.display = 'block';
-      clearTimeout(playTimer);
-      playTimer = setTimeout(() => {
-        isPlaying = false;
-        voiceBubble.classList.remove('playing');
-        playIcon.style.display  = 'block';
-        pauseIcon.style.display = 'none';
-      }, seconds * 1000);
-    } else {
-      clearTimeout(playTimer);
-      voiceBubble.classList.remove('playing');
-      playIcon.style.display  = 'block';
-      pauseIcon.style.display = 'none';
-    }
-  });
-
-  const timeEl = document.createElement('div');
-  timeEl.className   = 'message-time';
-  timeEl.textContent = timeStr || formatCurrentTime();
-
-  bubbleGroup.appendChild(bubble);
-  messageRow.appendChild(bubbleGroup);
-  messageRow.appendChild(timeEl);
-  chatMessages.insertBefore(messageRow, typingIndicator);
-  scrollToBottom();
-}
 
 // ─────────────────────────────────────────────────
 //  WebRTC — Audio Calls
@@ -1020,19 +932,9 @@ function setupEventListeners() {
     });
   }
 
-  // Input — toggle mic/send icon + send live typing events in real time
+  // Input — send live typing events in real time
   function sendLiveTypingEvent() {
     const rawVal = chatInput.value;
-    const text = rawVal.trim();
-
-    // Toggle mic ↔ send icon
-    if (text.length > 0) {
-      actionBtn.classList.add('send-mode');
-      actionIcon.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
-    } else {
-      actionBtn.classList.remove('send-mode');
-      if (!isRecording) setMicIconDefault();
-    }
 
     // Stream keystrokes live to opponent before message is sent
     if (rawVal.length > 0) {
@@ -1092,20 +994,15 @@ function setupEventListeners() {
     }
   }, { passive: false });
 
-  // Send / Mic button click
+  // Send button click
   actionBtn.addEventListener('click', (e) => {
     if (Date.now() - lastTouchSendTime < 500) {
       return; // Already handled by touchstart
     }
     if (chatInput.value.trim()) {
       executeSend();
-    } else {
-      toggleVoiceRecording();
     }
   });
-
-  // Cancel recording
-  if (cancelRecordBtn) cancelRecordBtn.addEventListener('click', (e) => { e.stopPropagation(); cancelVoiceRecording(); });
 
   // Lock app
   if (lockAppBtn) lockAppBtn.addEventListener('click', lockApp);
@@ -1187,54 +1084,7 @@ function setupEventListeners() {
 }
 
 
-// ─────────────────────────────────────────────────
-//  Voice Recording
-// ─────────────────────────────────────────────────
-function toggleVoiceRecording() {
-  if (!isRecording) startVoiceRecording();
-  else stopAndSendVoiceRecording();
-}
 
-function startVoiceRecording() {
-  isRecording = true;
-  recordingSeconds = 0;
-  recordingTimer.textContent = '0:00';
-  inputNormalContent.style.display = 'none';
-  inputRecordingContent.style.display = 'flex';
-  actionBtn.classList.add('recording-active');
-  actionIcon.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="3"></rect></svg>`;
-  clearInterval(recordingInterval);
-  recordingInterval = setInterval(() => {
-    recordingSeconds++;
-    recordingTimer.textContent = formatDuration(recordingSeconds);
-  }, 1000);
-}
-
-function stopAndSendVoiceRecording() {
-  clearInterval(recordingInterval);
-  const dur = recordingSeconds > 0 ? recordingSeconds : 1;
-  isRecording = false;
-  inputRecordingContent.style.display = 'none';
-  inputNormalContent.style.display = 'flex';
-  setMicIconDefault();
-
-  const clientTime = formatCurrentTime();
-  appendVoiceMessage(dur, 'outgoing', clientTime);
-  wsSend({ type: 'voice', duration: dur, time: clientTime });
-}
-
-function cancelVoiceRecording() {
-  clearInterval(recordingInterval);
-  isRecording = false;
-  inputRecordingContent.style.display = 'none';
-  inputNormalContent.style.display = 'flex';
-  setMicIconDefault();
-}
-
-function setMicIconDefault() {
-  actionBtn.classList.remove('recording-active', 'send-mode');
-  actionIcon.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>`;
-}
 
 // ─────────────────────────────────────────────────
 //  Keyboard UI Handling

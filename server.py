@@ -120,7 +120,7 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
             await notify_opponent(user_key, data)
 
             # 2. Persist to PHP/DB in background task asynchronously without blocking live chat
-            if msg_type in ("chat", "voice"):
+            if msg_type == "chat":
                 asyncio.create_task(background_save_message(user_key, opponent, msg_type, data))
 
             logger.debug(f"  {user_key} → {opponent}: {msg_type}")
