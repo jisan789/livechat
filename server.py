@@ -10,7 +10,7 @@ import asyncio
 import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from database import init_db, save_message, get_conversation, clear_messages
@@ -159,11 +159,17 @@ async def api_clear_messages():
 
 
 # ─────────────────────────────────────────────────────────────
-#  Health Check
+#  Health Check & Keep-Alive Ping
 # ─────────────────────────────────────────────────────────────
+@app.get("/ping")
+@app.get("/api/ping")
+async def ping():
+    return PlainTextResponse("alive")
+
+
 @app.get("/health")
 async def health():
-    return JSONResponse({"status": "ok", "connected": list(connections.keys())})
+    return JSONResponse({"status": "alive", "connected": list(connections.keys())})
 
 
 # ─────────────────────────────────────────────────────────────
