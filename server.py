@@ -53,6 +53,23 @@ async def notify_opponent(user_key: str, payload: dict):
             connections.pop(opponent, None)
 
 
+async def background_save_message(user_key: str, opponent: str, msg_type: str, data: dict):
+    """Save message in the background without blocking real-time WebSocket communication."""
+    try:
+        saved = await asyncio.to_thread(
+            save_message,
+            sender=user_key,
+            recipient=opponent,
+            msg_type=msg_type,
+            text_content=data.get("text"),
+            media_duration=data.get("duration"),
+            client_time=data.get("time"),
+        )
+        logger.info(f"[DB] Async saved {msg_type} #{saved.get('id')} from {user_key} to {opponent}")
+    except Exception as e:
+        logger.error(f"[DB] Error saving message in background: {e}")
+
+
 # ─────────────────────────────────────────────────────────────
 #  WebSocket Endpoint
 # ─────────────────────────────────────────────────────────────
@@ -98,26 +115,13 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
 
             msg_type = data.get("type", "")
 
-            # Persist chat and voice messages to database
-            if msg_type in ("chat", "voice"):
-                try:
-                    saved = save_message(
-                        sender=user_key,
-                        recipient=opponent,
-                        msg_type=msg_type,
-                        text_content=data.get("text"),
-                        media_duration=data.get("duration"),
-                        client_time=data.get("time"),
-                    )
-                    data["id"] = saved.get("id")
-                    data["created_at"] = saved.get("created_at")
-                    logger.info(f"[DB] Saved {msg_type} message #{data['id']} from {user_key} to {opponent}")
-                except Exception as e:
-                    logger.error(f"[DB] Error saving message: {e}")
-
-            # All message types are just relayed to the opponent
+            # 1. Forward INSTANTLY over direct WebSocket (Zero Latency!)
             data["from"] = user_key
             await notify_opponent(user_key, data)
+
+            # 2. Persist to PHP/DB in background task asynchronously without blocking live chat
+            if msg_type in ("chat", "voice"):
+                asyncio.create_task(background_save_message(user_key, opponent, msg_type, data))
 
             logger.debug(f"  {user_key} → {opponent}: {msg_type}")
 
