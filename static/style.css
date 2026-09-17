@@ -290,7 +290,7 @@ body {
   padding: 8px 18px 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 3px;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
   overscroll-behavior-y: contain;
@@ -308,7 +308,7 @@ body {
 /* Date Divider */
 .date-divider {
   align-self: center;
-  margin: 4px 0 10px 0;
+  margin: 6px 0 8px 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
@@ -321,6 +321,12 @@ body {
   flex-direction: column;
   max-width: 82%;
   animation: messageSlide 0.22s ease-out forwards;
+}
+
+/* Extra breathing room when speaker changes */
+.message-row.outgoing + .message-row.incoming,
+.message-row.incoming + .message-row.outgoing {
+  margin-top: 6px;
 }
 
 @keyframes messageSlide {
@@ -348,40 +354,55 @@ body {
 .bubble-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
   width: 100%;
 }
 
 .bubble {
   background: var(--bubble-bg);
-  padding: 12px 18px;
-  border-radius: 20px;
+  padding: 9px 15px;
+  border-radius: 18px;
   box-shadow: var(--bubble-shadow);
   color: #1F2937;
   font-size: 14.5px;
-  line-height: 1.45;
+  line-height: 1.4;
   font-weight: 500;
   word-break: break-word;
 }
 
 /* Match the exact shapes from mockup */
 .message-row.outgoing .bubble {
-  border-radius: 20px 20px 6px 20px;
+  border-radius: 18px 18px 5px 18px;
 }
 
 .message-row.incoming .bubble {
-  border-radius: 20px 20px 20px 6px;
+  border-radius: 18px 18px 18px 5px;
+}
+
+/* Subtle grouping curve for consecutive messages from same speaker */
+.message-row.outgoing:has(+ .message-row.outgoing) .bubble {
+  border-bottom-right-radius: 5px;
+}
+.message-row.outgoing + .message-row.outgoing .bubble {
+  border-top-right-radius: 5px;
+}
+.message-row.incoming:has(+ .message-row.incoming) .bubble {
+  border-bottom-left-radius: 5px;
+}
+.message-row.incoming + .message-row.incoming .bubble {
+  border-top-left-radius: 5px;
 }
 
 .message-row.incoming .bubble-group .bubble:not(:first-child):not(:last-child) {
-  border-radius: 8px 20px 20px 8px;
+  border-radius: 8px 18px 18px 8px;
 }
 
 .message-time {
-  font-size: 11.5px;
+  font-size: 10.5px;
+  line-height: 1.1;
   color: var(--text-muted);
   font-weight: 400;
-  margin-top: 5px;
+  margin-top: 2px;
   padding: 0 4px;
 }
 
