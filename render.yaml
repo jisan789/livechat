@@ -3,8 +3,10 @@ services:
     name: livechat
     runtime: python
     plan: free
+    pythonVersion: "3.11.9"
     buildCommand: pip install -r requirements.txt
     startCommand: python -m uvicorn server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
+
