@@ -1253,6 +1253,7 @@ body {
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .pin-key:hover {
@@ -1261,7 +1262,8 @@ body {
   transform: scale(1.05);
 }
 
-.pin-key:active {
+.pin-key:active,
+.pin-key.active-press {
   background: #E5E7EB;
   transform: scale(0.92);
 }
@@ -1281,6 +1283,12 @@ body {
 .pin-back-key:hover {
   background: #F3F4F6;
   border-color: transparent;
+}
+
+.pin-back-key:active,
+.pin-back-key.active-press {
+  background: #E5E7EB;
+  transform: scale(0.92);
 }
 
 /* ══════════════════════════════════════════════════

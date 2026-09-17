@@ -178,6 +178,16 @@ async def health():
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+@app.get("/app.js")
+async def serve_app_js():
+    return FileResponse("static/app.js", media_type="application/javascript", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/style.css")
+async def serve_style_css():
+    return FileResponse("static/style.css", media_type="text/css", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
 @app.get("/")
 async def serve_root():
     return FileResponse("index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

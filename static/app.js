@@ -186,22 +186,60 @@ window.addEventListener('DOMContentLoaded', () => {
 // ─────────────────────────────────────────────────
 function setupPinPad() {
   document.querySelectorAll('.pin-key[data-digit]').forEach((key) => {
-    key.addEventListener('click', () => handlePinDigit(key.getAttribute('data-digit')));
+    key.addEventListener('click', (e) => {
+      e.preventDefault();
+      const digit = key.getAttribute('data-digit');
+      if (digit !== null) {
+        handlePinDigit(digit);
+      }
+    });
   });
-  if (pinBackspaceBtn) {
-    pinBackspaceBtn.addEventListener('click', handlePinBackspace);
+
+  const backBtn = pinBackspaceBtn || document.getElementById('pinBackspaceBtn');
+  if (backBtn) {
+    backBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handlePinBackspace();
+    });
   }
+
   window.addEventListener('keydown', (e) => {
-    if (pinOverlay && !pinOverlay.classList.contains('unlocked')) {
-      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); handlePinDigit(e.key); }
-      else if (e.key === 'Backspace')    { e.preventDefault(); handlePinBackspace(); }
-      else if (e.key === 'Enter' && enteredPin.length === 4) verifyPin();
+    const overlay = pinOverlay || document.getElementById('pinOverlay');
+    if (overlay && !overlay.classList.contains('unlocked')) {
+      let digit = null;
+      if (e.key >= '0' && e.key <= '9') {
+        digit = e.key;
+      } else if (e.code && /^Numpad[0-9]$/.test(e.code)) {
+        digit = e.code.replace('Numpad', '');
+      }
+
+      if (digit !== null) {
+        e.preventDefault();
+        handlePinDigit(digit);
+        const btn = document.querySelector(`.pin-key[data-digit="${digit}"]`);
+        if (btn) {
+          btn.classList.add('active-press');
+          setTimeout(() => btn.classList.remove('active-press'), 120);
+        }
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        handlePinBackspace();
+        const bBtn = pinBackspaceBtn || document.getElementById('pinBackspaceBtn');
+        if (bBtn) {
+          bBtn.classList.add('active-press');
+          setTimeout(() => bBtn.classList.remove('active-press'), 120);
+        }
+      } else if (e.key === 'Enter' && enteredPin.length === 4) {
+        e.preventDefault();
+        verifyPin();
+      }
     }
   });
 }
 
 function handlePinDigit(digit) {
   if (enteredPin.length >= 4) return;
+  clearPinFeedback();
   enteredPin += digit;
   updatePinDotsUI();
   if (enteredPin.length === 4) setTimeout(verifyPin, 100);
