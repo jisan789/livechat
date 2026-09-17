@@ -104,6 +104,7 @@ let callSeconds     = 0;
 let typingOutTimer    = null;
 let opponentTyping    = false;
 let opponentTypingTimer = null;
+let lastLocalTextLength = 0;
 
 // Sound
 let soundEnabled = localStorage.getItem('chat_typing_sound') !== 'false';
@@ -528,9 +529,9 @@ function handleOpponentLiveTyping(text) {
     textNode.textContent = text;
   }
 
-  // Play subtle keypress sound as characters are typed
-  if (text.length > lastOpponentTextLength) {
-    playOpponentKeypressSound();
+  // Play subtle keypress sound as characters are typed by opponent
+  if (text.length !== lastOpponentTextLength) {
+    playKeypressSound();
   }
   lastOpponentTextLength = text.length;
 
@@ -631,6 +632,7 @@ function handleSend() {
   const clientTime = formatCurrentTime();
   appendMessage(text, 'outgoing', clientTime);
   chatInput.value = '';
+  lastLocalTextLength = 0;
   chatInput.dispatchEvent(new Event('input'));
   emojiPopover.classList.remove('show');
 
@@ -932,9 +934,17 @@ function setupEventListeners() {
     });
   }
 
-  // Input — send live typing events in real time
+  // Input — send live typing events in real time & play keystroke audio
   function sendLiveTypingEvent() {
     const rawVal = chatInput.value;
+
+    // Play subtle typing sound for local keystrokes (at 50% volume)
+    if (rawVal.length !== lastLocalTextLength) {
+      if (rawVal.length > 0) {
+        playKeypressSound();
+      }
+      lastLocalTextLength = rawVal.length;
+    }
 
     // Stream keystrokes live to opponent before message is sent
     if (rawVal.length > 0) {
@@ -1152,7 +1162,7 @@ async function preloadKeypressSounds() {
 
 const fallbackAudio = SOUND_FILES.map((f) => {
   const a = new Audio(`${soundBasePath}${f}`);
-  a.volume = 0.55;
+  a.volume = 0.25;
   return a;
 });
 
@@ -1160,7 +1170,7 @@ const fallbackAudio = SOUND_FILES.map((f) => {
   window.addEventListener(ev, () => { getAudioContext(); preloadKeypressSounds(); }, { once: true, passive: true })
 );
 
-function playOpponentKeypressSound() {
+function playKeypressSound() {
   if (!soundEnabled) return;
   const ctx = getAudioContext();
   let idx = Math.floor(Math.random() * SOUND_FILES.length);
@@ -1172,17 +1182,20 @@ function playOpponentKeypressSound() {
       const src  = ctx.createBufferSource();
       const gain = ctx.createGain();
       src.buffer = KEYPRESS_AUDIO_BUFFERS[idx];
-      gain.gain.value = 0.55 * (0.96 + Math.random() * 0.08);
+      // 50% volume for subtle and comfortable mechanical key clicks
+      gain.gain.value = 0.25 * (0.96 + Math.random() * 0.08);
       src.connect(gain);
       gain.connect(ctx.destination);
       src.start(0);
     } catch (_) { /* ignore */ }
   } else {
     const clone = fallbackAudio[idx].cloneNode();
-    clone.volume = 0.5;
+    clone.volume = 0.25;
     clone.play().catch(() => {});
   }
 }
+
+const playOpponentKeypressSound = playKeypressSound;
 
 // ─────────────────────────────────────────────────
 //  Utility
