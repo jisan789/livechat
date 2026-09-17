@@ -23,6 +23,7 @@ const recordingTimer     = document.getElementById('recordingTimer');
 const cancelRecordBtn    = document.getElementById('cancelRecordBtn');
 
 const soundToggleBtn     = document.getElementById('soundToggleBtn');
+const clearChatBtn       = document.getElementById('clearChatBtn');
 const lockAppBtn         = document.getElementById('lockAppBtn');
 const pinOverlay         = document.getElementById('pinOverlay');
 const pinDotsContainer   = document.getElementById('pinDots');
@@ -411,6 +412,12 @@ function handleWsMessage(msg) {
       receiveIncomingMessage(msg.text, msg.time, msg.id);
       break;
 
+    // ── Chat cleared ──────────────────────────────
+    case 'chat_cleared':
+      clearChatDOM();
+      showToast('Chat history cleared', 'info');
+      break;
+
     // ── Image message ─────────────────────────────
     // ── Voice note ────────────────────────────────
     case 'voice':
@@ -580,6 +587,16 @@ function hideOpponentTyping() {
   if (typingIndicator) {
     typingIndicator.classList.remove('active');
   }
+}
+
+function clearChatDOM() {
+  document.querySelectorAll('#chatMessages .message-row').forEach(row => row.remove());
+  if (currentLiveIncomingRow) {
+    currentLiveIncomingRow.remove();
+    currentLiveIncomingRow = null;
+  }
+  lastOpponentTextLength = 0;
+  hideOpponentTyping();
 }
 
 // ─────────────────────────────────────────────────
@@ -1046,6 +1063,26 @@ function setupEventListeners() {
 
   // Lock app
   if (lockAppBtn) lockAppBtn.addEventListener('click', lockApp);
+
+  // Clear chat (empties messages.json on PHP receiver and local DB)
+  if (clearChatBtn) {
+    clearChatBtn.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to clear all chat messages? This will empty messages.json on the server.')) {
+        return;
+      }
+      try {
+        const res = await fetch('/api/messages/clear', { method: 'POST' });
+        if (res.ok) {
+          clearChatDOM();
+          showToast('Chat history cleared ✓', 'info');
+        } else {
+          showToast('Failed to clear chat', 'error');
+        }
+      } catch (err) {
+        showToast('Error clearing chat', 'error');
+      }
+    });
+  }
 
   // Call button
   if (voiceCallBtn) {

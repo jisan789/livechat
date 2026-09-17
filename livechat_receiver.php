@@ -88,7 +88,37 @@ function appendMessage($file, $newMsg) {
 
 // Determine Action and Method
 $method = $_SERVER['REQUEST_METHOD'];
-$action = isset($_GET['action']) ? $_GET['action'] : '';
+$action = isset($_GET['action']) ? strtolower(trim($_GET['action'])) : '';
+
+$rawInput = file_get_contents('php://input');
+$jsonBody = json_decode($rawInput, true);
+
+if (!$action && is_array($jsonBody) && isset($jsonBody['action'])) {
+    $action = strtolower(trim($jsonBody['action']));
+}
+if (!$action && isset($_POST['action'])) {
+    $action = strtolower(trim($_POST['action']));
+}
+
+// ─────────────────────────────────────────────────────────────
+// 0. CLEAR: Empty messages.json
+// Example: ?action=clear or ?action=empty or POST {"action":"clear"}
+// ─────────────────────────────────────────────────────────────
+if ($action === 'clear' || $action === 'empty') {
+    $fp = fopen($dataFile, 'w');
+    if ($fp) {
+        flock($fp, LOCK_EX);
+        fwrite($fp, json_encode([], JSON_PRETTY_PRINT));
+        fflush($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        echo json_encode([
+            'status' => 'ok',
+            'message' => 'All messages cleared successfully'
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
 
 // ─────────────────────────────────────────────────────────────
 // 1. GET: Retrieve messages
@@ -126,13 +156,7 @@ if ($method === 'GET' || $action === 'get') {
 // {"sender":"jisu","recipient":"jenu","msg_type":"chat","text_content":"hello","client_time":"10:30 AM"}
 // ─────────────────────────────────────────────────────────────
 if ($method === 'POST') {
-    $rawInput = file_get_contents('php://input');
-    $input = json_decode($rawInput, true);
-
-    if (!is_array($input)) {
-        // Also support standard application/x-www-form-urlencoded
-        $input = $_POST;
-    }
+    $input = is_array($jsonBody) ? $jsonBody : $_POST;
 
     $sender = isset($input['sender']) ? trim($input['sender']) : '';
     $recipient = isset($input['recipient']) ? trim($input['recipient']) : '';

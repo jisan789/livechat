@@ -160,3 +160,31 @@ def get_conversation(user1: str, user2: str, limit: int = 200) -> List[Dict[str,
         )
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+def clear_messages() -> bool:
+    """Clear all messages from PHP storage and local SQLite."""
+    success = False
+    if PHP_STORAGE_URL:
+        try:
+            sep = "&" if "?" in PHP_STORAGE_URL else "?"
+            url = f"{PHP_STORAGE_URL}{sep}action=clear"
+            req = urllib.request.Request(url, headers={"User-Agent": "LiveChat-Server/1.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                if result.get("status") == "ok":
+                    success = True
+                    logger.info("[DB] Cleared PHP storage messages.json.")
+        except Exception as e:
+            logger.error(f"[DB] Error clearing PHP storage ({e})")
+
+    try:
+        with get_sqlite_connection() as conn:
+            conn.execute("DELETE FROM messages;")
+            conn.commit()
+        success = True
+        logger.info("[DB] Cleared SQLite messages.")
+    except Exception as e:
+        logger.error(f"[DB] Error clearing SQLite messages: {e}")
+
+    return success

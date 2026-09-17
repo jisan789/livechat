@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from database import init_db, save_message, get_conversation
+from database import init_db, save_message, get_conversation, clear_messages
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("livechat")
@@ -147,6 +147,15 @@ async def get_messages(user_key: str):
     opponent = OPPONENTS[user_key]
     messages = get_conversation(user_key, opponent)
     return JSONResponse({"status": "ok", "user": user_key, "opponent": opponent, "messages": messages})
+
+
+@app.post("/api/messages/clear")
+async def api_clear_messages():
+    ok = clear_messages()
+    # Broadcast to all connected users that chat was cleared
+    for ukey, ws in list(connections.items()):
+        await safe_send(ws, {"type": "chat_cleared"})
+    return JSONResponse({"status": "ok" if ok else "error"})
 
 
 # ─────────────────────────────────────────────────────────────
