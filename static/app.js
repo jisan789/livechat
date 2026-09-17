@@ -67,7 +67,7 @@ const USER_PROFILES = {
     pin: '3690',
     opponent: {
       key: 'jisu',
-      name: 'Jisan',
+      name: 'Mr. IC',
       avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=256'
     }
   }
