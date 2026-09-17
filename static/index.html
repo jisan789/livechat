@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveChat Ultra - Real-time WebSocket & WebRTC Chat</title>
+    <meta name="description" content="Super fast real-time chat application with Python WebSockets, WebRTC video calling, and live typing progress.">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar: Rooms, Peers & Settings -->
+        <aside class="sidebar glass-panel" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <div class="brand-icon">⚡</div>
+                    <div class="brand-title">LiveChat</div>
+                </div>
+                <div class="room-badge" id="current-room-badge" title="Click to copy invite link"># general</div>
+            </div>
+
+            <div class="sidebar-body">
+                <div>
+                    <div class="sidebar-section-title">
+                        <span>Active Peers (<span id="peer-count">1</span>)</span>
+                    </div>
+                    <div class="peer-list" id="peer-list">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <div>
+                    <div class="sidebar-section-title">
+                        <span>Quick Rooms</span>
+                    </div>
+                    <div class="peer-list">
+                        <div class="peer-item" onclick="switchRoom('general')" style="cursor: pointer;">
+                            <div class="peer-avatar">🌐</div>
+                            <div class="peer-info">
+                                <div class="peer-name"># general</div>
+                                <div class="peer-status">Public Lounge</div>
+                            </div>
+                        </div>
+                        <div class="peer-item" onclick="switchRoom('dev-sync')" style="cursor: pointer;">
+                            <div class="peer-avatar">💻</div>
+                            <div class="peer-info">
+                                <div class="peer-name"># dev-sync</div>
+                                <div class="peer-status">Tech & Code</div>
+                            </div>
+                        </div>
+                        <div class="peer-item" onclick="switchRoom('gaming')" style="cursor: pointer;">
+                            <div class="peer-avatar">🎮</div>
+                            <div class="peer-info">
+                                <div class="peer-name"># gaming</div>
+                                <div class="peer-status">Hangout & Streams</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="peer-avatar" id="my-avatar">⚡</div>
+                <div class="user-tag-badge">
+                    <div style="font-weight: 700; color: #fff;" id="my-username">Guest</div>
+                    <div style="font-size: 11px; color: var(--status-online);">Online</div>
+                </div>
+                <button class="settings-btn" id="btn-open-settings" title="Profile Settings">⚙️</button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-container glass-panel">
+            <!-- Chat Header -->
+            <header class="chat-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-header" id="btn-toggle-sidebar" style="display: none; padding: 6px 10px;">☰</button>
+                    <div class="room-meta">
+                        <h2>
+                            <span class="online-pulse"></span>
+                            <span id="chat-room-title"># general</span>
+                        </h2>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button class="btn-header" id="btn-share-room" title="Copy Invite Link">
+                        🔗 Share
+                    </button>
+                    <button class="btn-header" id="btn-toggle-sound" title="Toggle Sound">
+                        🔔 Sound On
+                    </button>
+                    <button class="btn-header btn-call" id="btn-start-call" title="Start WebRTC Video Call">
+                        📹 Video Call
+                    </button>
+                </div>
+            </header>
+
+            <!-- Messages Stream -->
+            <section class="messages-container" id="messages-container">
+                <div class="system-message">
+                    <span>⚡ Welcome to LiveChat Ultra. Real-time WebSocket connection established.</span>
+                </div>
+            </section>
+
+            <!-- LIVE TYPING PROGRESS DOCK -->
+            <div class="typing-progress-dock hidden" id="typing-progress-dock">
+                <div class="typing-indicator-row">
+                    <div class="typing-user-badge">
+                        <div class="typing-wave">
+                            <span class="typing-wave-bar"></span>
+                            <span class="typing-wave-bar"></span>
+                            <span class="typing-wave-bar"></span>
+                            <span class="typing-wave-bar"></span>
+                        </div>
+                        <span id="typing-username">Someone</span> is typing...
+                    </div>
+                    <div class="live-progress-container">
+                        <div class="live-progress-bar" id="live-progress-bar"></div>
+                    </div>
+                    <div class="typing-stats" id="typing-stats">0 chars</div>
+                </div>
+                <div class="ghost-stream-box hidden" id="ghost-stream-box">
+                    <span style="opacity: 0.7; font-size: 11px;">LIVE PREVIEW:</span>
+                    <span id="ghost-stream-text"></span>
+                    <span class="ghost-cursor"></span>
+                </div>
+            </div>
+
+            <!-- Chat Input Area -->
+            <footer class="chat-input-area">
+                <div class="input-toolbar">
+                    <label class="live-stream-toggle" title="When ON, peers see your live typing keystrokes stream in real time!">
+                        <input type="checkbox" id="toggle-ghost-mode" style="display: none;">
+                        <span class="toggle-switch"></span>
+                        <span>⚡ Live Keystroke Stream</span>
+                    </label>
+
+                    <div style="display: flex; gap: 8px;">
+                        <input type="file" id="file-input" style="display: none;" accept="image/*,.pdf,.txt,.zip">
+                        <button class="input-btn" id="btn-attach" title="Attach file or photo">📎</button>
+                        <button class="input-btn" id="btn-quick-emoji" title="Insert Emoji">😀</button>
+                    </div>
+                </div>
+
+                <div class="input-box-wrapper">
+                    <textarea 
+                        id="chat-input" 
+                        class="chat-input" 
+                        placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)" 
+                        rows="1"
+                    ></textarea>
+                    <button class="btn-send" id="btn-send" title="Send Message">➤</button>
+                </div>
+            </footer>
+        </main>
+
+        <!-- WebRTC Video Overlay Dock (Draggable / Floating) -->
+        <div class="video-overlay-dock hidden" id="video-overlay-dock">
+            <div class="video-dock-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="online-pulse"></span>
+                    <span>WebRTC Live Call</span>
+                </div>
+                <button class="settings-btn" id="btn-minimize-call" style="font-size: 14px;">✕</button>
+            </div>
+
+            <div class="video-grid" id="video-grid">
+                <!-- Local Video Card -->
+                <div class="video-tile glass-card" id="local-video-card">
+                    <video id="local-video" autoplay playsinline muted></video>
+                    <div class="video-overlay">
+                        <span class="user-tag"><i class="badge-dot"></i> You (Local)</span>
+                    </div>
+                </div>
+                <!-- Remote Videos Container -->
+                <div id="remote-videos" style="display: contents;"></div>
+            </div>
+
+            <div class="call-controls">
+                <button class="control-btn" id="btn-toggle-mic" title="Mute/Unmute Mic">🎙️</button>
+                <button class="control-btn" id="btn-toggle-camera" title="Turn Camera On/Off">📷</button>
+                <button class="control-btn" id="btn-toggle-screen" title="Share Screen">🖥️</button>
+                <button class="control-btn btn-hangup" id="btn-hangup" title="End Call">📞</button>
+            </div>
+        </div>
+
+        <!-- Profile & Room Settings Modal -->
+        <div class="modal-backdrop hidden" id="settings-modal">
+            <div class="modal-card glass-panel">
+                <div class="modal-title">Your Profile & Room</div>
+
+                <div>
+                    <label style="font-size: 12px; color: var(--text-muted);">Display Name</label>
+                    <input type="text" id="modal-username-input" class="input-field" style="width: 100%; margin-top: 4px;" placeholder="Choose a handle...">
+                </div>
+
+                <div>
+                    <label style="font-size: 12px; color: var(--text-muted);">Choose Avatar</label>
+                    <div class="avatar-grid" id="avatar-grid">
+                        <div class="avatar-opt" data-avatar="⚡">⚡</div>
+                        <div class="avatar-opt" data-avatar="🚀">🚀</div>
+                        <div class="avatar-opt" data-avatar="👾">👾</div>
+                        <div class="avatar-opt" data-avatar="🦊">🦊</div>
+                        <div class="avatar-opt" data-avatar="🤖">🤖</div>
+                        <div class="avatar-opt" data-avatar="🪐">🪐</div>
+                        <div class="avatar-opt" data-avatar="🔮">🔮</div>
+                        <div class="avatar-opt" data-avatar="🐱">🐱</div>
+                        <div class="avatar-opt" data-avatar="🔥">🔥</div>
+                        <div class="avatar-opt" data-avatar="💎">💎</div>
+                        <div class="avatar-opt" data-avatar="🦄">🦄</div>
+                        <div class="avatar-opt" data-avatar="🌟">🌟</div>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-size: 12px; color: var(--text-muted);">Room Name</label>
+                    <input type="text" id="modal-room-input" class="input-field" style="width: 100%; margin-top: 4px;" placeholder="general">
+                </div>
+
+                <button class="modal-btn-submit" id="btn-save-settings">Save & Join</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/audio.js"></script>
+    <script src="/static/webrtc.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
