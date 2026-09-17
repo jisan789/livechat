@@ -14,6 +14,9 @@ const chatInput          = document.getElementById('chatInput');
 const actionBtn          = document.getElementById('actionBtn');
 const actionIcon         = document.getElementById('actionIcon');
 const typingIndicator    = document.getElementById('typingIndicator');
+const livePreviewRow     = document.getElementById('livePreviewRow');
+const livePreviewLabel   = document.getElementById('livePreviewLabel');
+const livePreviewText    = document.getElementById('livePreviewText');
 const emojiPopover       = document.getElementById('emojiPopover');
 const emojiBtn           = document.getElementById('emojiBtn');
 const inputPill          = document.getElementById('inputPill');
@@ -242,8 +245,9 @@ function lockApp() {
   updatePinDotsUI();
   clearPinFeedback();
 
-  // Clear rendered message bubbles on lock
-  document.querySelectorAll('#chatMessages .message-row').forEach(row => row.remove());
+  // Clear rendered message bubbles on lock (preserve live preview row)
+  document.querySelectorAll('#chatMessages .message-row:not(#livePreviewRow)').forEach(row => row.remove());
+  hideOpponentLivePreview();
 
   if (pinOverlay) pinOverlay.classList.remove('unlocked');
   setPresenceOffline();
@@ -412,13 +416,18 @@ function handleWsMessage(msg) {
       appendVoiceMessage(msg.duration, 'incoming', msg.time, msg.id);
       break;
 
+    // ── Live real-time typing preview ─────────────
+    case 'live_typing':
+      handleOpponentLiveTyping(msg.text);
+      break;
+
     // ── Typing indicators ─────────────────────────
     case 'typing_start':
       showOpponentTyping();
       break;
 
     case 'typing_stop':
-      hideOpponentTyping();
+      hideOpponentLivePreview();
       break;
 
     // ── WebRTC Signaling ──────────────────────────
@@ -470,8 +479,69 @@ function setPresenceOffline() {
 }
 
 // ─────────────────────────────────────────────────
-//  Typing Indicators
+//  Typing Indicators & Real-Time Live Preview
 // ─────────────────────────────────────────────────
+let lastOpponentTextLength = 0;
+
+function handleOpponentLiveTyping(text) {
+  clearTimeout(opponentTypingTimer);
+
+  if (!text || text.trim() === '') {
+    hideOpponentLivePreview();
+    return;
+  }
+
+  opponentTyping = true;
+  if (userStatusEl) {
+    userStatusEl.textContent = 'typing...';
+    userStatusEl.classList.add('is-typing');
+  }
+
+  if (livePreviewRow && livePreviewText) {
+    // Ensure live preview row is at the very bottom of the chat list
+    chatMessages.appendChild(livePreviewRow);
+    if (typingIndicator) {
+      chatMessages.appendChild(typingIndicator);
+      typingIndicator.classList.remove('active');
+    }
+
+    if (livePreviewLabel) {
+      livePreviewLabel.textContent = `${currentPartner.name || 'Opponent'} is typing:`;
+    }
+
+    // Play subtle keystroke sound as new characters arrive
+    if (text.length > lastOpponentTextLength) {
+      playOpponentKeypressSound();
+    }
+    lastOpponentTextLength = text.length;
+
+    livePreviewText.textContent = text;
+    livePreviewRow.classList.add('active');
+    scrollToBottom();
+  }
+
+  // Auto-hide if inactive for 6s
+  opponentTypingTimer = setTimeout(hideOpponentLivePreview, 6000);
+}
+
+function hideOpponentLivePreview() {
+  lastOpponentTextLength = 0;
+  opponentTyping = false;
+  if (userStatusEl) {
+    userStatusEl.textContent = isOpponentOnline ? 'Online' : 'Offline';
+    userStatusEl.classList.remove('is-typing');
+  }
+  if (livePreviewRow) {
+    livePreviewRow.classList.remove('active');
+  }
+  if (livePreviewText) {
+    livePreviewText.textContent = '';
+  }
+  if (typingIndicator) {
+    typingIndicator.classList.remove('active');
+  }
+}
+
 function showOpponentTyping() {
   opponentTyping = true;
   clearTimeout(opponentTypingTimer);
@@ -479,76 +549,28 @@ function showOpponentTyping() {
     userStatusEl.textContent = 'typing...';
     userStatusEl.classList.add('is-typing');
   }
-  // Auto-clear after 4s if no stop event
-  opponentTypingTimer = setTimeout(hideOpponentTyping, 4000);
+  if (typingIndicator && (!livePreviewRow || !livePreviewRow.classList.contains('active'))) {
+    typingIndicator.classList.add('active');
+    scrollToBottom();
+  }
+  opponentTypingTimer = setTimeout(hideOpponentLivePreview, 4000);
 }
 
 function hideOpponentTyping() {
-  opponentTyping = false;
-  if (userStatusEl) {
-    userStatusEl.textContent = isOpponentOnline ? 'Online' : 'Offline';
-    userStatusEl.classList.remove('is-typing');
-  }
+  hideOpponentLivePreview();
 }
 
 // ─────────────────────────────────────────────────
-//  Incoming Chat Message (live-streaming animation)
+//  Incoming Chat Message
 // ─────────────────────────────────────────────────
 function receiveIncomingMessage(text, timeStr, messageId = null) {
-  hideOpponentTyping();
+  hideOpponentLivePreview();
 
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
     return;
   }
 
-  const messageRow = document.createElement('div');
-  messageRow.className = 'message-row incoming';
-  if (messageId) {
-    messageRow.dataset.msgId = messageId;
-  }
-
-  const bubbleGroup = document.createElement('div');
-  bubbleGroup.className = 'bubble-group';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble live-typing-bubble';
-
-  const textNode   = document.createElement('span');
-  textNode.className = 'streaming-text';
-  const cursorNode = document.createElement('span');
-  cursorNode.className = 'streaming-cursor';
-
-  bubble.appendChild(textNode);
-  bubble.appendChild(cursorNode);
-  bubbleGroup.appendChild(bubble);
-  messageRow.appendChild(bubbleGroup);
-
-  chatMessages.insertBefore(messageRow, typingIndicator);
-  scrollToBottom();
-
-  // Stream text character by character
-  let i = 0;
-  function typeNext() {
-    if (i < text.length) {
-      i++;
-      textNode.textContent = text.slice(0, i);
-      playOpponentKeypressSound();
-      const ch = text[i - 1];
-      let delay = 22 + Math.random() * 28;
-      if (ch === ' ')  delay += 30;
-      if ('.,!?'.includes(ch)) delay += 100;
-      setTimeout(typeNext, delay);
-    } else {
-      cursorNode.remove();
-      bubble.classList.remove('live-typing-bubble');
-      const timeEl = document.createElement('div');
-      timeEl.className = 'message-time';
-      timeEl.textContent = timeStr || formatCurrentTime();
-      messageRow.appendChild(timeEl);
-      scrollToBottom();
-    }
-  }
-  typeNext();
+  appendMessage(text, 'incoming', timeStr, messageId);
 }
 
 // ─────────────────────────────────────────────────
@@ -564,7 +586,8 @@ function handleSend() {
   chatInput.dispatchEvent(new Event('input'));
   emojiPopover.classList.remove('show');
 
-  // Send typing_stop
+  // Clear live typing preview on opponent's screen
+  wsSend({ type: 'live_typing', text: '' });
   wsSend({ type: 'typing_stop' });
   clearTimeout(typingOutTimer);
 
@@ -601,7 +624,8 @@ function appendMessage(content, type = 'outgoing', timeStr = null, messageId = n
   messageRow.appendChild(bubbleGroup);
   messageRow.appendChild(timeEl);
 
-  chatMessages.insertBefore(messageRow, typingIndicator);
+  const target = livePreviewRow || typingIndicator;
+  chatMessages.insertBefore(messageRow, target);
   scrollToBottom();
 }
 
@@ -678,7 +702,8 @@ function appendVoiceMessage(seconds, type = 'outgoing', timeStr = null, messageI
   bubbleGroup.appendChild(bubble);
   messageRow.appendChild(bubbleGroup);
   messageRow.appendChild(timeEl);
-  chatMessages.insertBefore(messageRow, typingIndicator);
+  const target = livePreviewRow || typingIndicator;
+  chatMessages.insertBefore(messageRow, target);
   scrollToBottom();
 }
 
@@ -927,9 +952,11 @@ function setupEventListeners() {
     });
   }
 
-  // Input — toggle mic/send icon + send typing events
-  chatInput.addEventListener('input', () => {
-    const text = chatInput.value.trim();
+  // Input — toggle mic/send icon + send live typing events in real time
+  function sendLiveTypingEvent() {
+    const rawVal = chatInput.value;
+    const text = rawVal.trim();
+
     // Toggle mic ↔ send icon
     if (text.length > 0) {
       actionBtn.classList.add('send-mode');
@@ -938,16 +965,24 @@ function setupEventListeners() {
       actionBtn.classList.remove('send-mode');
       if (!isRecording) setMicIconDefault();
     }
-    // Typing indicator events
-    if (text.length > 0) {
-      wsSend({ type: 'typing_start' });
+
+    // Stream keystrokes live to opponent before message is sent
+    if (rawVal.length > 0) {
+      wsSend({ type: 'live_typing', text: rawVal });
       clearTimeout(typingOutTimer);
-      typingOutTimer = setTimeout(() => wsSend({ type: 'typing_stop' }), 2000);
+      typingOutTimer = setTimeout(() => {
+        wsSend({ type: 'live_typing', text: '' });
+        wsSend({ type: 'typing_stop' });
+      }, 5000);
     } else {
       clearTimeout(typingOutTimer);
+      wsSend({ type: 'live_typing', text: '' });
       wsSend({ type: 'typing_stop' });
     }
-  });
+  }
+
+  chatInput.addEventListener('input', sendLiveTypingEvent);
+  chatInput.addEventListener('keyup', sendLiveTypingEvent);
 
   // Enter to send
   chatInput.addEventListener('keydown', (e) => {
