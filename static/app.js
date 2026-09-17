@@ -93,6 +93,7 @@ let localStream     = null;
 let remoteAudioEl   = null;
 let isMicMuted      = false;
 let isCaller        = false;
+let pendingIceCandidates = [];
 
 // Call UI state
 let isCallActive    = false;
@@ -109,7 +110,7 @@ let lastLocalTextLength = 0;
 // Sound
 let soundEnabled = localStorage.getItem('chat_typing_sound') !== 'false';
 let audioCtx     = null;
-const KEYPRESS_AUDIO_BUFFERS = [];
+let KEYPRESS_AUDIO_BUFFERS = [];
 let audioBuffersLoaded = false;
 let lastSoundIndex = -1;
 const soundBasePath = (window.location.pathname.includes('/static/') ? 'keypresssound/' : 'static/keypresssound/');
@@ -118,13 +119,18 @@ const SOUND_FILES = [
   'keypress-005.wav','keypress-006.wav','keypress-007.wav','keypress-008.wav'
 ];
 
-// WebRTC config — uses free Google STUN servers
+// WebRTC config — multi-network STUN servers (Google, Cloudflare, Mozilla)
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com:3478' }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 // ─────────────────────────────────────────────────
@@ -692,16 +698,37 @@ function scrollToBottom() {
 // ─────────────────────────────────────────────────
 //  WebRTC — Audio Calls
 // ─────────────────────────────────────────────────
+async function drainPendingIceCandidates() {
+  if (!peerConn || !peerConn.remoteDescription || !peerConn.remoteDescription.type) return;
+  while (pendingIceCandidates.length > 0) {
+    const candidate = pendingIceCandidates.shift();
+    try {
+      await peerConn.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.warn('[RTC] error adding buffered candidate:', e);
+    }
+  }
+}
+
 async function startAudioCall() {
   if (isCallActive) { restoreCall(); return; }
   if (!isOpponentOnline) { showToast(`${currentPartner.name} is offline`, 'error'); return; }
 
   isCaller = true;
   isCallActive = true;
+  pendingIceCandidates = [];
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
   } catch (err) {
+    console.error('[RTC] getUserMedia error:', err);
     showToast('Microphone access denied', 'error');
     isCallActive = false;
     return;
@@ -710,11 +737,19 @@ async function startAudioCall() {
   createPeerConnection();
   localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
 
-  const offer = await peerConn.createOffer();
-  await peerConn.setLocalDescription(offer);
-  wsSend({ type: 'call_offer', sdp: offer });
-
-  openCallModal('Calling...');
+  try {
+    const offer = await peerConn.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: false
+    });
+    await peerConn.setLocalDescription(offer);
+    wsSend({ type: 'call_offer', sdp: offer });
+    openCallModal('Calling...');
+  } catch (err) {
+    console.error('[RTC] Error creating offer:', err);
+    showToast('Could not initiate call', 'error');
+    closeWebRTCCall(false);
+  }
 }
 
 async function handleIncomingOffer(sdp) {
@@ -724,11 +759,12 @@ async function handleIncomingOffer(sdp) {
     return;
   }
 
+  // Store offer and reset pending candidate queue
+  window._pendingOffer = sdp;
+  pendingIceCandidates = [];
+
   // Show ringing overlay
   showIncomingCallUI();
-
-  // Store offer to process after user accepts
-  window._pendingOffer = sdp;
 }
 
 async function acceptCall() {
@@ -737,74 +773,133 @@ async function acceptCall() {
 
   isCallActive = true;
   isCaller = false;
+  openCallModal('Connecting...');
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
   } catch (err) {
+    console.error('[RTC] getUserMedia error on accept:', err);
     showToast('Microphone access denied', 'error');
     wsSend({ type: 'call_reject' });
-    isCallActive = false;
+    closeWebRTCCall(false);
     return;
   }
 
   createPeerConnection();
   localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
 
-  await peerConn.setRemoteDescription(new RTCSessionDescription(window._pendingOffer));
-  const answer = await peerConn.createAnswer();
-  await peerConn.setLocalDescription(answer);
-  wsSend({ type: 'call_answer', sdp: answer });
+  try {
+    await peerConn.setRemoteDescription(new RTCSessionDescription(window._pendingOffer));
+    window._pendingOffer = null;
+    await drainPendingIceCandidates();
 
-  window._pendingOffer = null;
-  openCallModal('Connecting...');
+    const answer = await peerConn.createAnswer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: false
+    });
+    await peerConn.setLocalDescription(answer);
+    wsSend({ type: 'call_answer', sdp: answer });
+  } catch (err) {
+    console.error('[RTC] Error accepting call:', err);
+    showToast('Call connection failed', 'error');
+    closeWebRTCCall(true);
+  }
 }
 
 function rejectCall() {
   hideIncomingCallUI();
   window._pendingOffer = null;
+  pendingIceCandidates = [];
   wsSend({ type: 'call_reject' });
 }
 
 async function handleCallAnswer(sdp) {
   if (!peerConn) return;
-  await peerConn.setRemoteDescription(new RTCSessionDescription(sdp));
+  try {
+    await peerConn.setRemoteDescription(new RTCSessionDescription(sdp));
+    await drainPendingIceCandidates();
+  } catch (err) {
+    console.error('[RTC] Error setting answer remote description:', err);
+  }
 }
 
 async function handleIceCandidate(candidate) {
-  if (!peerConn || !candidate) return;
+  if (!candidate) return;
+  if (!peerConn || !peerConn.remoteDescription || !peerConn.remoteDescription.type) {
+    pendingIceCandidates.push(candidate);
+    return;
+  }
   try {
     await peerConn.addIceCandidate(new RTCIceCandidate(candidate));
-  } catch (e) { /* ignore stale candidates */ }
+  } catch (e) {
+    console.warn('[RTC] addIceCandidate error:', e);
+  }
 }
 
 function createPeerConnection() {
+  if (peerConn) {
+    try { peerConn.close(); } catch (_) {}
+  }
+
   peerConn = new RTCPeerConnection(RTC_CONFIG);
 
   peerConn.onicecandidate = (e) => {
     if (e.candidate) {
-      wsSend({ type: 'call_ice', candidate: e.candidate.toJSON() });
+      wsSend({
+        type: 'call_ice',
+        candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate
+      });
     }
   };
 
   peerConn.ontrack = (e) => {
     if (!remoteAudioEl) {
-      remoteAudioEl = new Audio();
-      remoteAudioEl.autoplay = true;
+      remoteAudioEl = document.getElementById('remoteAudio');
+      if (!remoteAudioEl) {
+        remoteAudioEl = document.createElement('audio');
+        remoteAudioEl.id = 'remoteAudio';
+        remoteAudioEl.autoplay = true;
+        remoteAudioEl.playsInline = true;
+        document.body.appendChild(remoteAudioEl);
+      }
     }
-    remoteAudioEl.srcObject = e.streams[0];
+    if (e.streams && e.streams[0]) {
+      remoteAudioEl.srcObject = e.streams[0];
+    } else {
+      remoteAudioEl.srcObject = new MediaStream([e.track]);
+    }
+    remoteAudioEl.play().catch(err => {
+      console.warn('[RTC] Autoplay waiting for user gesture:', err);
+    });
   };
 
-  peerConn.onconnectionstatechange = () => {
-    const state = peerConn.connectionState;
-    if (state === 'connected') {
-      startCallTimer();
-      if (callStatus)    callStatus.textContent = '00:00';
-      if (callStatusDot) callStatusDot.style.background = '#10B981';
-    }
-    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+  const checkState = () => {
+    if (!peerConn) return;
+    const cState = peerConn.connectionState;
+    const iState = peerConn.iceConnectionState;
+
+    if (cState === 'connected' || iState === 'connected' || iState === 'completed') {
+      if (callTimer === null) {
+        startCallTimer();
+        if (callStatus)    callStatus.textContent = '00:00';
+        if (callStatusDot) callStatusDot.style.background = '#10B981';
+      }
+    } else if (cState === 'failed' || iState === 'failed') {
+      console.warn('[RTC] Connection failed. cState:', cState, 'iState:', iState);
+      showToast('Call connection failed', 'error');
       closeWebRTCCall(false);
     }
   };
+
+  peerConn.onconnectionstatechange = checkState;
+  peerConn.oniceconnectionstatechange = checkState;
 }
 
 function closeWebRTCCall(sendEndSignal = true) {
@@ -812,9 +907,24 @@ function closeWebRTCCall(sendEndSignal = true) {
     wsSend({ type: 'call_end' });
   }
 
-  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-  if (peerConn)    { peerConn.close(); peerConn = null; }
-  if (remoteAudioEl) { remoteAudioEl.srcObject = null; remoteAudioEl = null; }
+  pendingIceCandidates = [];
+  window._pendingOffer = null;
+
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  if (peerConn) {
+    peerConn.onicecandidate = null;
+    peerConn.ontrack = null;
+    peerConn.onconnectionstatechange = null;
+    peerConn.oniceconnectionstatechange = null;
+    peerConn.close();
+    peerConn = null;
+  }
+  if (remoteAudioEl) {
+    remoteAudioEl.srcObject = null;
+  }
 
   isCallActive    = false;
   isCallMinimized = false;
