@@ -306,23 +306,6 @@ body {
   word-break: break-word;
 }
 
-/* Image Message Bubble */
-.bubble.image-bubble {
-  padding: 6px;
-  border-radius: 18px;
-  overflow: hidden;
-  max-width: 250px;
-}
-
-.bubble.image-bubble img {
-  width: 100%;
-  height: auto;
-  max-height: 280px;
-  object-fit: cover;
-  border-radius: 14px;
-  display: block;
-}
-
 /* Match the exact shapes from mockup */
 .message-row.outgoing .bubble {
   border-radius: 20px 20px 6px 20px;

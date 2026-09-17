@@ -21,8 +21,7 @@ const inputNormalContent = document.getElementById('inputNormalContent');
 const inputRecordingContent = document.getElementById('inputRecordingContent');
 const recordingTimer     = document.getElementById('recordingTimer');
 const cancelRecordBtn    = document.getElementById('cancelRecordBtn');
-const imageInput         = document.getElementById('imageInput');
-const imageBtn           = document.getElementById('imageBtn');
+
 const soundToggleBtn     = document.getElementById('soundToggleBtn');
 const lockAppBtn         = document.getElementById('lockAppBtn');
 const pinOverlay         = document.getElementById('pinOverlay');
@@ -338,10 +337,6 @@ function handleWsMessage(msg) {
       break;
 
     // ── Image message ─────────────────────────────
-    case 'image':
-      appendMessage(msg.dataUrl, 'incoming', true);
-      break;
-
     // ── Voice note ────────────────────────────────
     case 'voice':
       appendVoiceMessage(msg.duration, 'incoming');
@@ -503,7 +498,7 @@ function handleSend() {
 // ─────────────────────────────────────────────────
 //  Append Message Bubble
 // ─────────────────────────────────────────────────
-function appendMessage(content, type = 'outgoing', isImage = false) {
+function appendMessage(content, type = 'outgoing') {
   const messageRow = document.createElement('div');
   messageRow.className = `message-row ${type}`;
 
@@ -511,13 +506,8 @@ function appendMessage(content, type = 'outgoing', isImage = false) {
   bubbleGroup.className = 'bubble-group';
 
   const bubble = document.createElement('div');
-  bubble.className = isImage ? 'bubble image-bubble' : 'bubble';
-
-  if (isImage) {
-    bubble.innerHTML = `<img src="${content}" alt="Shared photo" loading="lazy">`;
-  } else {
-    bubble.textContent = content;
-  }
+  bubble.className = 'bubble';
+  bubble.textContent = content;
 
   const timeEl = document.createElement('div');
   timeEl.className = 'message-time';
@@ -940,25 +930,8 @@ function setupEventListeners() {
     });
   }
 
-  // Image upload
-  if (imageBtn) imageBtn.addEventListener('click', () => imageInput.click());
-  if (imageInput) imageInput.addEventListener('change', handleImageUpload);
 }
 
-// ─────────────────────────────────────────────────
-//  Image Upload
-// ─────────────────────────────────────────────────
-function handleImageUpload(e) {
-  const file = e.target.files[0];
-  if (!file || !file.type.startsWith('image/')) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    appendMessage(ev.target.result, 'outgoing', true);
-    wsSend({ type: 'image', dataUrl: ev.target.result });
-  };
-  reader.readAsDataURL(file);
-  e.target.value = '';
-}
 
 // ─────────────────────────────────────────────────
 //  Voice Recording
