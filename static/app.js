@@ -651,6 +651,11 @@ function handleSend() {
   chatInput.dispatchEvent(new Event('input'));
   emojiPopover.classList.remove('show');
 
+  // Retain focus so virtual keyboard does not close
+  chatInput.focus({ preventScroll: true });
+  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
+  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
+
   // Clear live typing preview on opponent's screen
   wsSend({ type: 'live_typing', text: '' });
   wsSend({ type: 'typing_stop' });
@@ -1047,15 +1052,56 @@ function setupEventListeners() {
   chatInput.addEventListener('input', sendLiveTypingEvent);
   chatInput.addEventListener('keyup', sendLiveTypingEvent);
 
-  // Enter to send
+  // Helper to send message while keeping focus on input (keeps mobile keyboard open)
+  function executeSend() {
+    if (chatInput.value.trim()) {
+      handleSend();
+      chatInput.focus({ preventScroll: true });
+      setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
+    }
+  }
+
+  // Enter to send (desktop and mobile virtual keyboards)
   chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      executeSend();
+    }
   });
 
-  // Send/Mic button
-  actionBtn.addEventListener('click', () => {
-    if (chatInput.value.trim()) handleSend();
-    else toggleVoiceRecording();
+  // Prevent send button from stealing focus from chatInput (which closes mobile keyboards)
+  let lastTouchSendTime = 0;
+
+  actionBtn.addEventListener('pointerdown', (e) => {
+    if (chatInput.value.trim()) {
+      e.preventDefault();
+    }
+  });
+
+  actionBtn.addEventListener('mousedown', (e) => {
+    if (chatInput.value.trim()) {
+      e.preventDefault();
+    }
+  });
+
+  actionBtn.addEventListener('touchstart', (e) => {
+    if (chatInput.value.trim()) {
+      e.preventDefault();
+      lastTouchSendTime = Date.now();
+      executeSend();
+    }
+  }, { passive: false });
+
+  // Send / Mic button click
+  actionBtn.addEventListener('click', (e) => {
+    if (Date.now() - lastTouchSendTime < 500) {
+      return; // Already handled by touchstart
+    }
+    if (chatInput.value.trim()) {
+      executeSend();
+    } else {
+      toggleVoiceRecording();
+    }
   });
 
   // Cancel recording
