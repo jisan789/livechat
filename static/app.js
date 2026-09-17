@@ -119,19 +119,50 @@ const SOUND_FILES = [
   'keypress-005.wav','keypress-006.wav','keypress-007.wav','keypress-008.wav'
 ];
 
-// WebRTC config — multi-network STUN servers (Google, Cloudflare, Mozilla)
+// WebRTC config — STUN + public TURN servers for NAT traversal
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.services.mozilla.com:3478' }
+    // Public TURN servers — fallback for strict NAT environments
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
-  iceCandidatePoolSize: 10
+  iceCandidatePoolSize: 10,
+  iceTransportPolicy: 'all'
 };
+
+// ICE connection timeout — if ICE gathering doesn't connect in 18s, fail cleanly
+let iceConnectionTimeout = null;
+function startIceTimeout() {
+  clearTimeout(iceConnectionTimeout);
+  iceConnectionTimeout = setTimeout(() => {
+    if (peerConn && peerConn.iceConnectionState !== 'connected' && peerConn.iceConnectionState !== 'completed') {
+      console.warn('[RTC] ICE timeout — could not connect after 18s');
+      showToast('Call failed — could not connect (network issue)', 'error');
+      closeWebRTCCall(true);
+    }
+  }, 18000);
+}
+function clearIceTimeout() {
+  clearTimeout(iceConnectionTimeout);
+  iceConnectionTimeout = null;
+}
 
 // ─────────────────────────────────────────────────
 //  Boot
@@ -433,7 +464,14 @@ function handleWsMessage(msg) {
       handleIncomingOffer(msg.sdp);
       break;
 
+    case 'call_ringing':
+      // Callee phone is ringing — update caller from "Calling..." to "Ringing..."
+      if (callStatus) callStatus.textContent = 'Ringing...';
+      break;
+
     case 'call_answer':
+      // Callee accepted — show "Connecting..." while ICE negotiates
+      if (callStatus) callStatus.textContent = 'Connecting...';
       handleCallAnswer(msg.sdp);
       break;
 
@@ -442,18 +480,21 @@ function handleWsMessage(msg) {
       break;
 
     case 'call_end':
+      clearIceTimeout();
       closeWebRTCCall(false);
       showToast(`${currentPartner.name} ended the call`);
       break;
 
     case 'call_reject':
+      clearIceTimeout();
       closeWebRTCCall(false);
-      showToast(`${currentPartner.name} rejected the call`);
+      showToast(`${currentPartner.name} declined the call`, 'error');
       break;
 
     case 'call_busy':
+      clearIceTimeout();
       closeWebRTCCall(false);
-      showToast(`${currentPartner.name} is busy`);
+      showToast(`${currentPartner.name} is busy in another call`, 'error');
       break;
   }
 }
@@ -729,8 +770,15 @@ async function startAudioCall() {
     });
   } catch (err) {
     console.error('[RTC] getUserMedia error:', err);
-    showToast('Microphone access denied', 'error');
     isCallActive = false;
+    isCaller = false;
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showToast('Microphone permission denied — allow mic in browser settings', 'error');
+    } else if (err.name === 'NotFoundError') {
+      showToast('No microphone found on this device', 'error');
+    } else {
+      showToast('Cannot access microphone: ' + err.message, 'error');
+    }
     return;
   }
 
@@ -745,9 +793,10 @@ async function startAudioCall() {
     await peerConn.setLocalDescription(offer);
     wsSend({ type: 'call_offer', sdp: offer });
     openCallModal('Calling...');
+    startIceTimeout();
   } catch (err) {
     console.error('[RTC] Error creating offer:', err);
-    showToast('Could not initiate call', 'error');
+    showToast('Could not start call: ' + err.message, 'error');
     closeWebRTCCall(false);
   }
 }
@@ -762,6 +811,9 @@ async function handleIncomingOffer(sdp) {
   // Store offer and reset pending candidate queue
   window._pendingOffer = sdp;
   pendingIceCandidates = [];
+
+  // Notify caller that callee's phone is ringing
+  wsSend({ type: 'call_ringing' });
 
   // Show ringing overlay
   showIncomingCallUI();
@@ -786,7 +838,13 @@ async function acceptCall() {
     });
   } catch (err) {
     console.error('[RTC] getUserMedia error on accept:', err);
-    showToast('Microphone access denied', 'error');
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showToast('Microphone permission denied — allow mic in browser settings', 'error');
+    } else if (err.name === 'NotFoundError') {
+      showToast('No microphone found on this device', 'error');
+    } else {
+      showToast('Cannot access microphone: ' + err.message, 'error');
+    }
     wsSend({ type: 'call_reject' });
     closeWebRTCCall(false);
     return;
@@ -794,6 +852,7 @@ async function acceptCall() {
 
   createPeerConnection();
   localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
+  startIceTimeout();
 
   try {
     await peerConn.setRemoteDescription(new RTCSessionDescription(window._pendingOffer));
@@ -808,7 +867,7 @@ async function acceptCall() {
     wsSend({ type: 'call_answer', sdp: answer });
   } catch (err) {
     console.error('[RTC] Error accepting call:', err);
-    showToast('Call connection failed', 'error');
+    showToast('Call setup failed: ' + err.message, 'error');
     closeWebRTCCall(true);
   }
 }
@@ -827,6 +886,8 @@ async function handleCallAnswer(sdp) {
     await drainPendingIceCandidates();
   } catch (err) {
     console.error('[RTC] Error setting answer remote description:', err);
+    showToast('Call handshake failed: ' + err.message, 'error');
+    closeWebRTCCall(true);
   }
 }
 
@@ -884,16 +945,31 @@ function createPeerConnection() {
     if (!peerConn) return;
     const cState = peerConn.connectionState;
     const iState = peerConn.iceConnectionState;
+    console.log(`[RTC] connectionState=${cState} iceConnectionState=${iState}`);
 
     if (cState === 'connected' || iState === 'connected' || iState === 'completed') {
+      clearIceTimeout();
       if (callTimer === null) {
         startCallTimer();
         if (callStatus)    callStatus.textContent = '00:00';
         if (callStatusDot) callStatusDot.style.background = '#10B981';
       }
+    } else if (iState === 'checking') {
+      if (callStatus) callStatus.textContent = 'Connecting...';
+    } else if (iState === 'disconnected') {
+      // Transient drop — give ICE 5s to recover before ending
+      if (callStatus) callStatus.textContent = 'Reconnecting...';
+      clearIceTimeout();
+      iceConnectionTimeout = setTimeout(() => {
+        if (peerConn && (peerConn.iceConnectionState === 'disconnected' || peerConn.iceConnectionState === 'failed')) {
+          showToast('Call dropped — network disconnected', 'error');
+          closeWebRTCCall(true);
+        }
+      }, 5000);
     } else if (cState === 'failed' || iState === 'failed') {
+      clearIceTimeout();
       console.warn('[RTC] Connection failed. cState:', cState, 'iState:', iState);
-      showToast('Call connection failed', 'error');
+      showToast('Call failed — network or NAT issue. Try again.', 'error');
       closeWebRTCCall(false);
     }
   };
@@ -907,6 +983,7 @@ function closeWebRTCCall(sendEndSignal = true) {
     wsSend({ type: 'call_end' });
   }
 
+  clearIceTimeout();
   pendingIceCandidates = [];
   window._pendingOffer = null;
 
@@ -929,6 +1006,7 @@ function closeWebRTCCall(sendEndSignal = true) {
   isCallActive    = false;
   isCallMinimized = false;
   isMicMuted      = false;
+  isCaller        = false;
   clearInterval(callTimer);
   callTimer   = null;
   callSeconds = 0;
