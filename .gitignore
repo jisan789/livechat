@@ -30,3 +30,9 @@ Thumbs.db
 # Node
 node_modules/
 npm-debug.log
+
+# SQLite Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

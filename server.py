@@ -13,11 +13,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from database import init_db, save_message, get_conversation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("livechat")
 
 app = FastAPI(title="LiveChat Server", version="1.0.0")
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+    logger.info("[DB] SQLite database initialized.")
 
 # ─────────────────────────────────────────────────────────────
 #  Connection Registry
@@ -92,6 +98,23 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
 
             msg_type = data.get("type", "")
 
+            # Persist chat and voice messages to database
+            if msg_type in ("chat", "voice"):
+                try:
+                    saved = save_message(
+                        sender=user_key,
+                        recipient=opponent,
+                        msg_type=msg_type,
+                        text_content=data.get("text"),
+                        media_duration=data.get("duration"),
+                        client_time=data.get("time"),
+                    )
+                    data["id"] = saved.get("id")
+                    data["created_at"] = saved.get("created_at")
+                    logger.info(f"[DB] Saved {msg_type} message #{data['id']} from {user_key} to {opponent}")
+                except Exception as e:
+                    logger.error(f"[DB] Error saving message: {e}")
+
             # All message types are just relayed to the opponent
             data["from"] = user_key
             await notify_opponent(user_key, data)
@@ -108,6 +131,18 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
         else:
             logger.info(f"[-] {user_key} stale connection closed (replaced by newer)")
 
+
+
+# ─────────────────────────────────────────────────────────────
+#  Message History Endpoint
+# ─────────────────────────────────────────────────────────────
+@app.get("/api/messages/{user_key}")
+async def get_messages(user_key: str):
+    if user_key not in VALID_USERS:
+        return JSONResponse({"status": "error", "message": "Unknown user"}, status_code=404)
+    opponent = OPPONENTS[user_key]
+    messages = get_conversation(user_key, opponent)
+    return JSONResponse({"status": "ok", "user": user_key, "opponent": opponent, "messages": messages})
 
 
 # ─────────────────────────────────────────────────────────────

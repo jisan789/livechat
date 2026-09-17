@@ -224,6 +224,9 @@ function loginUser(userKey) {
   getAudioContext();
   preloadKeypressSounds();
 
+  // Load chat history from server database immediately
+  loadChatHistory(userKey);
+
   // Connect WebSocket
   connectWebSocket(userKey);
 }
@@ -239,9 +242,75 @@ function lockApp() {
   updatePinDotsUI();
   clearPinFeedback();
 
+  // Clear rendered message bubbles on lock
+  document.querySelectorAll('#chatMessages .message-row').forEach(row => row.remove());
+
   if (pinOverlay) pinOverlay.classList.remove('unlocked');
   setPresenceOffline();
   isManualDisconnect = false;
+}
+
+// ─────────────────────────────────────────────────
+//  Chat History & Persistence
+// ─────────────────────────────────────────────────
+function formatTimeFromIso(isoString) {
+  if (!isoString) return formatCurrentTime();
+  try {
+    const cleanStr = isoString.includes('T') ? isoString : isoString.replace(' ', 'T') + 'Z';
+    const date = new Date(cleanStr);
+    if (isNaN(date.getTime())) return formatCurrentTime();
+    let hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const strMinutes = minutes < 10 ? '0' + minutes : minutes;
+    return `${hours}:${strMinutes} ${ampm}`;
+  } catch (e) {
+    return formatCurrentTime();
+  }
+}
+
+async function loadChatHistory(userKey) {
+  if (!userKey) return;
+  try {
+    const res = await fetch(`/api/messages/${encodeURIComponent(userKey)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.messages) return;
+
+    const existingMsgIds = new Set();
+    document.querySelectorAll('#chatMessages .message-row[data-msg-id]').forEach(row => {
+      existingMsgIds.add(row.dataset.msgId);
+    });
+
+    let appendedAny = false;
+    for (const msg of data.messages) {
+      const msgIdStr = String(msg.id);
+      if (existingMsgIds.has(msgIdStr)) {
+        continue;
+      }
+
+      const isOutgoing = msg.sender === userKey;
+      const type = isOutgoing ? 'outgoing' : 'incoming';
+      const timeStr = msg.client_time || formatTimeFromIso(msg.created_at);
+
+      if (msg.msg_type === 'chat') {
+        appendMessage(msg.text_content, type, timeStr, msgIdStr);
+        appendedAny = true;
+      } else if (msg.msg_type === 'voice') {
+        appendVoiceMessage(msg.media_duration || 1, type, timeStr, msgIdStr);
+        appendedAny = true;
+      }
+      existingMsgIds.add(msgIdStr);
+    }
+
+    if (appendedAny) {
+      scrollToBottom();
+    }
+  } catch (err) {
+    console.warn('[DB] Failed to load chat history:', err);
+  }
 }
 
 // ─────────────────────────────────────────────────
@@ -268,6 +337,7 @@ function connectWebSocket(userKey) {
     console.log('[WS] connected as', userKey);
     wsReconnectDelay = 1000; // reset backoff on success
     showToast('Connected ✓', 'success');
+    loadChatHistory(userKey);
   };
 
   ws.onmessage = (event) => {
@@ -333,13 +403,13 @@ function handleWsMessage(msg) {
 
     // ── Chat message ──────────────────────────────
     case 'chat':
-      receiveIncomingMessage(msg.text, msg.time);
+      receiveIncomingMessage(msg.text, msg.time, msg.id);
       break;
 
     // ── Image message ─────────────────────────────
     // ── Voice note ────────────────────────────────
     case 'voice':
-      appendVoiceMessage(msg.duration, 'incoming');
+      appendVoiceMessage(msg.duration, 'incoming', msg.time, msg.id);
       break;
 
     // ── Typing indicators ─────────────────────────
@@ -424,11 +494,18 @@ function hideOpponentTyping() {
 // ─────────────────────────────────────────────────
 //  Incoming Chat Message (live-streaming animation)
 // ─────────────────────────────────────────────────
-function receiveIncomingMessage(text, timeStr) {
+function receiveIncomingMessage(text, timeStr, messageId = null) {
   hideOpponentTyping();
+
+  if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
+    return;
+  }
 
   const messageRow = document.createElement('div');
   messageRow.className = 'message-row incoming';
+  if (messageId) {
+    messageRow.dataset.msgId = messageId;
+  }
 
   const bubbleGroup = document.createElement('div');
   bubbleGroup.className = 'bubble-group';
@@ -481,7 +558,8 @@ function handleSend() {
   const text = chatInput.value.trim();
   if (!text) return;
 
-  appendMessage(text, 'outgoing');
+  const clientTime = formatCurrentTime();
+  appendMessage(text, 'outgoing', clientTime);
   chatInput.value = '';
   chatInput.dispatchEvent(new Event('input'));
   emojiPopover.classList.remove('show');
@@ -491,16 +569,22 @@ function handleSend() {
   clearTimeout(typingOutTimer);
 
   // Send the chat message
-  const sent = wsSend({ type: 'chat', text, time: formatCurrentTime() });
-  if (!sent) showToast('Not connected — message not delivered', 'error');
+  const sent = wsSend({ type: 'chat', text, time: clientTime });
+  if (!sent) showToast('Saved — will sync when connected', 'info');
 }
 
 // ─────────────────────────────────────────────────
 //  Append Message Bubble
 // ─────────────────────────────────────────────────
-function appendMessage(content, type = 'outgoing') {
+function appendMessage(content, type = 'outgoing', timeStr = null, messageId = null) {
+  if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
+    return;
+  }
   const messageRow = document.createElement('div');
   messageRow.className = `message-row ${type}`;
+  if (messageId) {
+    messageRow.dataset.msgId = messageId;
+  }
 
   const bubbleGroup = document.createElement('div');
   bubbleGroup.className = 'bubble-group';
@@ -511,7 +595,7 @@ function appendMessage(content, type = 'outgoing') {
 
   const timeEl = document.createElement('div');
   timeEl.className = 'message-time';
-  timeEl.textContent = formatCurrentTime();
+  timeEl.textContent = timeStr || formatCurrentTime();
 
   bubbleGroup.appendChild(bubble);
   messageRow.appendChild(bubbleGroup);
@@ -528,10 +612,16 @@ function scrollToBottom() {
 // ─────────────────────────────────────────────────
 //  Voice Notes
 // ─────────────────────────────────────────────────
-function appendVoiceMessage(seconds, type = 'outgoing') {
+function appendVoiceMessage(seconds, type = 'outgoing', timeStr = null, messageId = null) {
+  if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
+    return;
+  }
   const durationText = formatDuration(seconds);
   const messageRow = document.createElement('div');
   messageRow.className = `message-row ${type}`;
+  if (messageId) {
+    messageRow.dataset.msgId = messageId;
+  }
 
   const bubbleGroup = document.createElement('div');
   bubbleGroup.className = 'bubble-group';
@@ -583,7 +673,7 @@ function appendVoiceMessage(seconds, type = 'outgoing') {
 
   const timeEl = document.createElement('div');
   timeEl.className   = 'message-time';
-  timeEl.textContent = formatCurrentTime();
+  timeEl.textContent = timeStr || formatCurrentTime();
 
   bubbleGroup.appendChild(bubble);
   messageRow.appendChild(bubbleGroup);
@@ -964,8 +1054,9 @@ function stopAndSendVoiceRecording() {
   inputNormalContent.style.display = 'flex';
   setMicIconDefault();
 
-  appendVoiceMessage(dur, 'outgoing');
-  wsSend({ type: 'voice', duration: dur });
+  const clientTime = formatCurrentTime();
+  appendVoiceMessage(dur, 'outgoing', clientTime);
+  wsSend({ type: 'voice', duration: dur, time: clientTime });
 }
 
 function cancelVoiceRecording() {
