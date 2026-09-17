@@ -57,6 +57,16 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
         return
 
     await websocket.accept()
+
+    # If user already has an active connection (e.g. page refresh),
+    # close the old one gracefully before replacing
+    old_ws = connections.get(user_key)
+    if old_ws is not None:
+        try:
+            await old_ws.close(code=1000, reason="Replaced by new connection")
+        except Exception:
+            pass
+
     connections[user_key] = websocket
     logger.info(f"[+] {user_key} connected  (total: {len(connections)})")
 
@@ -83,17 +93,21 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
             msg_type = data.get("type", "")
 
             # All message types are just relayed to the opponent
-            # (chat, image, voice, typing_start, typing_stop,
-            #  call_offer, call_answer, call_ice, call_end, call_reject, call_busy)
             data["from"] = user_key
             await notify_opponent(user_key, data)
 
             logger.debug(f"  {user_key} → {opponent}: {msg_type}")
 
     except WebSocketDisconnect:
-        connections.pop(user_key, None)
-        logger.info(f"[-] {user_key} disconnected (total: {len(connections)})")
-        await notify_opponent(user_key, {"type": "presence", "status": "offline", "user": user_key})
+        # CRITICAL: Only remove from dict if THIS websocket is still the current one.
+        # If a new connection already replaced us, don't touch it.
+        if connections.get(user_key) is websocket:
+            connections.pop(user_key, None)
+            logger.info(f"[-] {user_key} disconnected (total: {len(connections)})")
+            await notify_opponent(user_key, {"type": "presence", "status": "offline", "user": user_key})
+        else:
+            logger.info(f"[-] {user_key} stale connection closed (replaced by newer)")
+
 
 
 # ─────────────────────────────────────────────────────────────
