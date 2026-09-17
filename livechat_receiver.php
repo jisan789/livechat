@@ -1,0 +1,182 @@
+<?php
+/**
+ * LiveChat JSON Storage Receiver
+ * Upload this file to your PHP hosting (e.g. livechat_api.php)
+ * Stores chat messages into messages.json with file locking.
+ */
+
+// 1. Set Headers & Enable CORS
+header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+
+// Handle preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// 2. Data file path
+$dataFile = __DIR__ . '/messages.json';
+
+// Initialize data file if it doesn't exist
+if (!file_exists($dataFile)) {
+    file_put_contents($dataFile, json_encode([], JSON_PRETTY_PRINT));
+    @chmod($dataFile, 0666);
+}
+
+// Protect messages.json from direct browser access via .htaccess if on Apache
+$htaccessFile = __DIR__ . '/.htaccess';
+if (!file_exists($htaccessFile)) {
+    @file_put_contents($htaccessFile, "<Files \"messages.json\">\nOrder Allow,Deny\nDeny from all\n</Files>\n");
+}
+
+// Helper: Read messages with shared lock
+function readAllMessages($file) {
+    if (!file_exists($file)) return [];
+    $fp = fopen($file, 'r');
+    if (!$fp) return [];
+    flock($fp, LOCK_SH);
+    $size = filesize($file);
+    $content = $size > 0 ? fread($fp, $size) : '[]';
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    $data = json_decode($content, true);
+    return is_array($data) ? $data : [];
+}
+
+// Helper: Append a message with exclusive lock
+function appendMessage($file, $newMsg) {
+    $fp = fopen($file, 'c+');
+    if (!$fp) return false;
+
+    if (flock($fp, LOCK_EX)) {
+        $size = filesize($file);
+        $content = $size > 0 ? fread($fp, $size) : '[]';
+        $messages = json_decode($content, true);
+        if (!is_array($messages)) {
+            $messages = [];
+        }
+
+        // Auto-increment ID
+        $lastId = 0;
+        if (!empty($messages)) {
+            $lastItem = end($messages);
+            $lastId = isset($lastItem['id']) ? (int)$lastItem['id'] : count($messages);
+        }
+        $newMsg['id'] = $lastId + 1;
+        if (empty($newMsg['created_at'])) {
+            $newMsg['created_at'] = gmdate('Y-m-d H:i:s');
+        }
+
+        $messages[] = $newMsg;
+
+        // Truncate and write updated JSON
+        ftruncate($fp, 0);
+        rewind($fp);
+        fwrite($fp, json_encode($messages, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        fflush($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return $newMsg;
+    }
+
+    fclose($fp);
+    return false;
+}
+
+// Determine Action and Method
+$method = $_SERVER['REQUEST_METHOD'];
+$action = isset($_GET['action']) ? $_GET['action'] : '';
+
+// ─────────────────────────────────────────────────────────────
+// 1. GET: Retrieve messages
+// Example: ?action=get&user1=jisu&user2=jenu
+// ─────────────────────────────────────────────────────────────
+if ($method === 'GET' || $action === 'get') {
+    $user1 = isset($_GET['user1']) ? trim($_GET['user1']) : (isset($_GET['user']) ? trim($_GET['user']) : '');
+    $user2 = isset($_GET['user2']) ? trim($_GET['user2']) : (isset($_GET['opponent']) ? trim($_GET['opponent']) : '');
+
+    $allMessages = readAllMessages($dataFile);
+
+    // Filter messages for the conversation if user1 & user2 provided
+    if ($user1 && $user2) {
+        $conversation = array_values(array_filter($allMessages, function ($m) use ($user1, $user2) {
+            $s = isset($m['sender']) ? $m['sender'] : '';
+            $r = isset($m['recipient']) ? $m['recipient'] : '';
+            return ($s === $user1 && $r === $user2) || ($s === $user2 && $r === $user1);
+        }));
+    } else {
+        // Return all messages if no specific user pair
+        $conversation = $allMessages;
+    }
+
+    echo json_encode([
+        'status' => 'ok',
+        'count' => count($conversation),
+        'messages' => $conversation
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 2. POST: Save a new message
+// Example: POST JSON body:
+// {"sender":"jisu","recipient":"jenu","msg_type":"chat","text_content":"hello","client_time":"10:30 AM"}
+// ─────────────────────────────────────────────────────────────
+if ($method === 'POST') {
+    $rawInput = file_get_contents('php://input');
+    $input = json_decode($rawInput, true);
+
+    if (!is_array($input)) {
+        // Also support standard application/x-www-form-urlencoded
+        $input = $_POST;
+    }
+
+    $sender = isset($input['sender']) ? trim($input['sender']) : '';
+    $recipient = isset($input['recipient']) ? trim($input['recipient']) : '';
+    $msgType = isset($input['msg_type']) ? trim($input['msg_type']) : 'chat';
+    $textContent = isset($input['text_content']) ? $input['text_content'] : (isset($input['text']) ? $input['text'] : null);
+    $mediaDuration = isset($input['media_duration']) ? (float)$input['media_duration'] : (isset($input['duration']) ? (float)$input['duration'] : null);
+    $clientTime = isset($input['client_time']) ? trim($input['client_time']) : (isset($input['time']) ? trim($input['time']) : '');
+
+    if (!$sender || !$recipient) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Missing sender or recipient']);
+        exit;
+    }
+
+    $newRecord = [
+        'sender' => $sender,
+        'recipient' => $recipient,
+        'msg_type' => $msgType,
+        'text_content' => $textContent,
+        'media_duration' => $mediaDuration,
+        'client_time' => $clientTime,
+    ];
+
+    $saved = appendMessage($dataFile, $newRecord);
+
+    if ($saved) {
+        echo json_encode([
+            'status' => 'ok',
+            'message' => 'Message saved successfully',
+            'data' => $saved
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    } else {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Could not save message']);
+    }
+    exit;
+}
+
+// Default fallback
+echo json_encode([
+    'status' => 'ok',
+    'service' => 'LiveChat PHP JSON Storage Receiver',
+    'endpoints' => [
+        'get_messages' => 'GET ?action=get&user1=jisu&user2=jenu',
+        'save_message' => 'POST with JSON body {sender, recipient, msg_type, text_content, client_time}'
+    ]
+]);
