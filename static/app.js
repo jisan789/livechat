@@ -1,617 +1,1123 @@
-// LiveChat Ultra - Main Client Application Logic
-(() => {
-    // --- State & Storage ---
-    function generateId() {
-        return 'u_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36).substring(4);
+// LiveChat — Real-time WebSocket + WebRTC Client
+// Jisu (PIN 1470) ↔ Jenu (PIN 3690)
+
+// ─────────────────────────────────────────────────
+//  DOM References
+// ─────────────────────────────────────────────────
+const chatApp            = document.getElementById('chatApp');
+const avatarImg          = document.getElementById('avatarImg');
+const userNameEl         = document.getElementById('userName');
+const userStatusEl       = document.getElementById('userStatus');
+const avatarBadge        = document.querySelector('.avatar-badge');
+const chatMessages       = document.getElementById('chatMessages');
+const chatInput          = document.getElementById('chatInput');
+const actionBtn          = document.getElementById('actionBtn');
+const actionIcon         = document.getElementById('actionIcon');
+const typingIndicator    = document.getElementById('typingIndicator');
+const emojiPopover       = document.getElementById('emojiPopover');
+const emojiBtn           = document.getElementById('emojiBtn');
+const inputPill          = document.getElementById('inputPill');
+const inputNormalContent = document.getElementById('inputNormalContent');
+const inputRecordingContent = document.getElementById('inputRecordingContent');
+const recordingTimer     = document.getElementById('recordingTimer');
+const cancelRecordBtn    = document.getElementById('cancelRecordBtn');
+const imageInput         = document.getElementById('imageInput');
+const imageBtn           = document.getElementById('imageBtn');
+const soundToggleBtn     = document.getElementById('soundToggleBtn');
+const lockAppBtn         = document.getElementById('lockAppBtn');
+const pinOverlay         = document.getElementById('pinOverlay');
+const pinDotsContainer   = document.getElementById('pinDots');
+const pinFeedback        = document.getElementById('pinFeedback');
+const pinBackspaceBtn    = document.getElementById('pinBackspaceBtn');
+// Call UI
+const callModal          = document.getElementById('callModal');
+const callAvatar         = document.getElementById('callAvatar');
+const callName           = document.getElementById('callName');
+const callStatus         = document.getElementById('callStatus');
+const callStatusDot      = document.getElementById('callStatusDot');
+const endCallBtn         = document.getElementById('endCallBtn');
+const voiceCallBtn       = document.getElementById('voiceCallBtn');
+const callMinimizeBtn    = document.getElementById('callMinimizeBtn');
+const callMicToggleBtn   = document.getElementById('callMicToggleBtn');
+const callSpeakerBtn     = document.getElementById('callSpeakerBtn');
+const callChatBackBtn    = document.getElementById('callChatBackBtn');
+const micLabel           = document.getElementById('micLabel');
+const minimizedCallBanner = document.getElementById('minimizedCallBanner');
+const minimizedCallTimer  = document.getElementById('minimizedCallTimer');
+const minimizedEndCallBtn = document.getElementById('minimizedEndCallBtn');
+// Incoming call UI
+const incomingCallOverlay = document.getElementById('incomingCallOverlay');
+const incomingCallerName  = document.getElementById('incomingCallerName');
+const incomingCallerAvatar = document.getElementById('incomingCallerAvatar');
+const acceptCallBtn       = document.getElementById('acceptCallBtn');
+const rejectCallBtn       = document.getElementById('rejectCallBtn');
+
+// ─────────────────────────────────────────────────
+//  User Profiles
+// ─────────────────────────────────────────────────
+const USER_PROFILES = {
+  jisu: {
+    userName: 'Jisu',
+    pin: '1470',
+    opponent: {
+      key: 'jenu',
+      name: 'Jenu',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256'
     }
-
-    const urlParams = new URLSearchParams(window.location.search);
-    let roomId = urlParams.get('room') || 'general';
-    let clientId = localStorage.getItem('livechat_client_id');
-    if (!clientId) {
-        clientId = generateId();
-        localStorage.setItem('livechat_client_id', clientId);
+  },
+  jenu: {
+    userName: 'Jenu',
+    pin: '3690',
+    opponent: {
+      key: 'jisu',
+      name: 'Jisan',
+      avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=256'
     }
+  }
+};
 
-    let username = localStorage.getItem('livechat_username') || `User_${clientId.slice(-4)}`;
-    let avatar = localStorage.getItem('livechat_avatar') || '⚡';
-    let ghostModeEnabled = localStorage.getItem('livechat_ghost_mode') === 'true';
+// ─────────────────────────────────────────────────
+//  App State
+// ─────────────────────────────────────────────────
+let activeUser     = null;
+let currentPartner = { name: '', avatar: '', key: '' };
+let enteredPin     = '';
+let isOpponentOnline = false;
 
-    let socket = null;
-    let reconnectTimeout = null;
-    let pingInterval = null;
-    let typingTimeout = null;
-    let lastTypingSendTime = 0;
-    const activeTypers = new Map(); // sender_id -> typingData
+// WebSocket state
+let ws              = null;
+let wsReconnectDelay = 1000;
+let wsReconnectTimer = null;
+let isManualDisconnect = false;
 
-    // --- DOM Elements ---
-    const messagesContainer = document.getElementById('messages-container');
-    const chatInput = document.getElementById('chat-input');
-    const btnSend = document.getElementById('btn-send');
-    const typingDock = document.getElementById('typing-progress-dock');
-    const typingUsername = document.getElementById('typing-username');
-    const liveProgressBar = document.getElementById('live-progress-bar');
-    const typingStats = document.getElementById('typing-stats');
-    const ghostStreamBox = document.getElementById('ghost-stream-box');
-    const ghostStreamText = document.getElementById('ghost-stream-text');
-    const toggleGhostMode = document.getElementById('toggle-ghost-mode');
-    const peerList = document.getElementById('peer-list');
-    const peerCount = document.getElementById('peer-count');
-    const currentRoomBadge = document.getElementById('current-room-badge');
-    const chatRoomTitle = document.getElementById('chat-room-title');
-    const myAvatar = document.getElementById('my-avatar');
-    const myUsername = document.getElementById('my-username');
-    const fileInput = document.getElementById('file-input');
-    const btnAttach = document.getElementById('btn-attach');
-    const btnQuickEmoji = document.getElementById('btn-quick-emoji');
-    const btnShareRoom = document.getElementById('btn-share-room');
-    const btnToggleSound = document.getElementById('btn-toggle-sound');
-    const btnStartCall = document.getElementById('btn-start-call');
-    const videoOverlayDock = document.getElementById('video-overlay-dock');
-    const btnMinimizeCall = document.getElementById('btn-minimize-call');
-    const btnToggleMic = document.getElementById('btn-toggle-mic');
-    const btnToggleCamera = document.getElementById('btn-toggle-camera');
-    const btnToggleScreen = document.getElementById('btn-toggle-screen');
-    const btnHangup = document.getElementById('btn-hangup');
-    const settingsModal = document.getElementById('settings-modal');
-    const btnOpenSettings = document.getElementById('btn-open-settings');
-    const btnSaveSettings = document.getElementById('btn-save-settings');
-    const modalUsernameInput = document.getElementById('modal-username-input');
-    const modalRoomInput = document.getElementById('modal-room-input');
-    const avatarGrid = document.getElementById('avatar-grid');
-    const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
-    const sidebar = document.getElementById('sidebar');
+// WebRTC state
+let peerConn        = null;
+let localStream     = null;
+let remoteAudioEl   = null;
+let isMicMuted      = false;
+let isCaller        = false;
 
-    // --- Init UI State ---
-    function updateProfileUI() {
-        myAvatar.textContent = avatar;
-        myUsername.textContent = username;
-        currentRoomBadge.textContent = `# ${roomId}`;
-        chatRoomTitle.textContent = `# ${roomId}`;
-        toggleGhostMode.checked = ghostModeEnabled;
-        btnToggleSound.textContent = window.soundEngine.muted ? '🔇 Sound Off' : '🔔 Sound On';
+// Call UI state
+let isCallActive    = false;
+let isCallMinimized = false;
+let callTimer       = null;
+let callSeconds     = 0;
+
+// Recording state
+let isRecording       = false;
+let recordingSeconds  = 0;
+let recordingInterval = null;
+
+// Typing state
+let typingOutTimer    = null;
+let opponentTyping    = false;
+let opponentTypingTimer = null;
+
+// Sound
+let soundEnabled = localStorage.getItem('chat_typing_sound') !== 'false';
+let audioCtx     = null;
+const KEYPRESS_AUDIO_BUFFERS = [];
+let audioBuffersLoaded = false;
+let lastSoundIndex = -1;
+const soundBasePath = (window.location.pathname.includes('/static/') ? 'keypresssound/' : 'static/keypresssound/');
+const SOUND_FILES = [
+  'keypress-001.wav','keypress-002.wav','keypress-003.wav','keypress-004.wav',
+  'keypress-005.wav','keypress-006.wav','keypress-007.wav','keypress-008.wav'
+];
+
+// WebRTC config — uses free Google STUN servers
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+
+// ─────────────────────────────────────────────────
+//  Boot
+// ─────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  setupPinPad();
+  setupEventListeners();
+  setupKeyboardUIHandling();
+  preloadKeypressSounds();
+
+  const saved = sessionStorage.getItem('chat_active_user');
+  if (saved && USER_PROFILES[saved]) {
+    loginUser(saved);
+  } else {
+    lockApp();
+  }
+});
+
+// ─────────────────────────────────────────────────
+//  PIN Lock Screen
+// ─────────────────────────────────────────────────
+function setupPinPad() {
+  document.querySelectorAll('.pin-key[data-digit]').forEach((key) => {
+    key.addEventListener('click', () => handlePinDigit(key.getAttribute('data-digit')));
+  });
+  if (pinBackspaceBtn) {
+    pinBackspaceBtn.addEventListener('click', handlePinBackspace);
+  }
+  window.addEventListener('keydown', (e) => {
+    if (pinOverlay && !pinOverlay.classList.contains('unlocked')) {
+      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); handlePinDigit(e.key); }
+      else if (e.key === 'Backspace')    { e.preventDefault(); handlePinBackspace(); }
+      else if (e.key === 'Enter' && enteredPin.length === 4) verifyPin();
     }
-    updateProfileUI();
+  });
+}
 
-    // Responsive mobile sidebar toggle
-    if (window.innerWidth <= 768) {
-        btnToggleSidebar.style.display = 'block';
-        btnToggleSidebar.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-        });
+function handlePinDigit(digit) {
+  if (enteredPin.length >= 4) return;
+  enteredPin += digit;
+  updatePinDotsUI();
+  if (enteredPin.length === 4) setTimeout(verifyPin, 100);
+}
+
+function handlePinBackspace() {
+  if (enteredPin.length > 0) {
+    enteredPin = enteredPin.slice(0, -1);
+    updatePinDotsUI();
+    clearPinFeedback();
+  }
+}
+
+function updatePinDotsUI() {
+  document.querySelectorAll('#pinDots .pin-dot').forEach((dot, i) => {
+    dot.classList.toggle('filled', i < enteredPin.length);
+  });
+}
+
+function verifyPin() {
+  if      (enteredPin === '1470') loginUser('jisu');
+  else if (enteredPin === '3690') loginUser('jenu');
+  else showPinError();
+}
+
+function showPinError() {
+  if (pinDotsContainer) pinDotsContainer.classList.add('error');
+  if (pinFeedback) { pinFeedback.textContent = 'Incorrect PIN. Try again.'; pinFeedback.classList.add('visible'); }
+  setTimeout(() => {
+    enteredPin = '';
+    updatePinDotsUI();
+    if (pinDotsContainer) pinDotsContainer.classList.remove('error');
+  }, 500);
+}
+
+function clearPinFeedback() {
+  if (pinFeedback) { pinFeedback.textContent = ''; pinFeedback.classList.remove('visible'); }
+}
+
+function loginUser(userKey) {
+  activeUser = userKey;
+  sessionStorage.setItem('chat_active_user', userKey);
+  const profile = USER_PROFILES[userKey];
+  currentPartner = { ...profile.opponent };
+
+  applyOpponentProfile(profile.opponent.avatar, profile.opponent.name);
+  document.title = `LiveChat — ${profile.opponent.name}`;
+
+  if (pinOverlay) pinOverlay.classList.add('unlocked');
+
+  getAudioContext();
+  preloadKeypressSounds();
+
+  // Connect WebSocket
+  connectWebSocket(userKey);
+}
+
+function lockApp() {
+  isManualDisconnect = true;
+  disconnectWebSocket();
+  closeWebRTCCall(false);
+
+  activeUser = null;
+  sessionStorage.removeItem('chat_active_user');
+  enteredPin = '';
+  updatePinDotsUI();
+  clearPinFeedback();
+
+  if (pinOverlay) pinOverlay.classList.remove('unlocked');
+  setPresenceOffline();
+  isManualDisconnect = false;
+}
+
+// ─────────────────────────────────────────────────
+//  WebSocket — Connection Management
+// ─────────────────────────────────────────────────
+function getWsUrl(userKey) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}/ws/${userKey}`;
+}
+
+function connectWebSocket(userKey) {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  clearTimeout(wsReconnectTimer);
+
+  try {
+    ws = new WebSocket(getWsUrl(userKey));
+  } catch (e) {
+    console.warn('WS connect failed:', e);
+    scheduleReconnect(userKey);
+    return;
+  }
+
+  ws.onopen = () => {
+    console.log('[WS] connected as', userKey);
+    wsReconnectDelay = 1000; // reset backoff on success
+    showToast('Connected ✓', 'success');
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      handleWsMessage(msg);
+    } catch (e) {
+      console.warn('[WS] bad JSON', e);
     }
+  };
 
-    // --- WebSocket Engine ---
-    function connectWebSocket() {
-        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-            return;
-        }
+  ws.onclose = (e) => {
+    console.log('[WS] disconnected code:', e.code);
+    ws = null;
+    setPresenceOffline();
+    if (!isManualDisconnect && activeUser) scheduleReconnect(activeUser);
+  };
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/ws/${roomId}/${clientId}?username=${encodeURIComponent(username)}&avatar=${encodeURIComponent(avatar)}`;
+  ws.onerror = (e) => {
+    console.warn('[WS] error', e);
+  };
+}
 
-        socket = new WebSocket(wsUrl);
+function disconnectWebSocket() {
+  clearTimeout(wsReconnectTimer);
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+}
 
-        socket.onopen = () => {
-            console.log("⚡ LiveChat WebSocket Connected");
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
-
-            // Keep connection alive across proxies and cloud load balancers (Render)
-            if (pingInterval) clearInterval(pingInterval);
-            pingInterval = setInterval(() => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    socket.send(JSON.stringify({ type: 'ping' }));
-                }
-            }, 25000);
-        };
-
-        socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                handleIncomingMessage(data);
-            } catch (err) {
-                console.error("Error parsing message:", err);
-            }
-        };
-
-        socket.onclose = (event) => {
-            console.warn("WebSocket closed. Attempting reconnect in 2s...", event);
-            if (pingInterval) clearInterval(pingInterval);
-            reconnectTimeout = setTimeout(connectWebSocket, 2000);
-        };
-
-        socket.onerror = (err) => {
-            console.error("WebSocket error:", err);
-            socket.close();
-        };
+function scheduleReconnect(userKey) {
+  clearTimeout(wsReconnectTimer);
+  wsReconnectTimer = setTimeout(() => {
+    if (activeUser) {
+      wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000);
+      connectWebSocket(userKey);
     }
+  }, wsReconnectDelay);
+}
 
-    // --- Message Router ---
-    function handleIncomingMessage(msg) {
-        switch (msg.type) {
-            case 'chat':
-                appendChatMessage(msg);
-                if (msg.sender_id === clientId) {
-                    window.soundEngine.playSent();
-                } else {
-                    window.soundEngine.playReceived();
-                    // Clear sender's typing state upon sending message
-                    activeTypers.delete(msg.sender_id);
-                    renderTypingIndicators();
-                }
-                break;
+function wsSend(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+    return true;
+  }
+  return false;
+}
 
-            case 'typing_progress':
-                handleTypingProgress(msg);
-                break;
+// ─────────────────────────────────────────────────
+//  WebSocket — Incoming Message Router
+// ─────────────────────────────────────────────────
+function handleWsMessage(msg) {
+  switch (msg.type) {
 
-            case 'presence':
-                handlePresenceUpdate(msg);
-                break;
+    // ── Presence ──────────────────────────────────
+    case 'presence':
+      if (msg.user === currentPartner.key) {
+        isOpponentOnline = msg.status === 'online';
+        setPresenceUI(isOpponentOnline);
+      }
+      break;
 
-            case 'reaction':
-                handleReaction(msg);
-                break;
+    // ── Chat message ──────────────────────────────
+    case 'chat':
+      receiveIncomingMessage(msg.text, msg.time);
+      break;
 
-            case 'webrtc_signal':
-                window.webRTCManager.handleSignal(msg.sender_id, msg.sender_name, msg.sub_type, msg.signal);
-                break;
+    // ── Image message ─────────────────────────────
+    case 'image':
+      appendMessage(msg.dataUrl, 'incoming', true);
+      break;
 
-            case 'pong':
-                // Server heartbeat received
-                break;
-        }
+    // ── Voice note ────────────────────────────────
+    case 'voice':
+      appendVoiceMessage(msg.duration, 'incoming');
+      break;
+
+    // ── Typing indicators ─────────────────────────
+    case 'typing_start':
+      showOpponentTyping();
+      break;
+
+    case 'typing_stop':
+      hideOpponentTyping();
+      break;
+
+    // ── WebRTC Signaling ──────────────────────────
+    case 'call_offer':
+      handleIncomingOffer(msg.sdp);
+      break;
+
+    case 'call_answer':
+      handleCallAnswer(msg.sdp);
+      break;
+
+    case 'call_ice':
+      handleIceCandidate(msg.candidate);
+      break;
+
+    case 'call_end':
+      closeWebRTCCall(false);
+      showToast(`${currentPartner.name} ended the call`);
+      break;
+
+    case 'call_reject':
+      closeWebRTCCall(false);
+      showToast(`${currentPartner.name} rejected the call`);
+      break;
+
+    case 'call_busy':
+      closeWebRTCCall(false);
+      showToast(`${currentPartner.name} is busy`);
+      break;
+  }
+}
+
+// ─────────────────────────────────────────────────
+//  Presence UI
+// ─────────────────────────────────────────────────
+function setPresenceUI(online) {
+  if (avatarBadge) {
+    avatarBadge.style.background = online ? '#22C55E' : '#D1D5DB';
+  }
+  if (userStatusEl && !opponentTyping) {
+    userStatusEl.textContent = online ? 'Online' : 'Offline';
+    userStatusEl.classList.toggle('is-typing', false);
+  }
+}
+
+function setPresenceOffline() {
+  isOpponentOnline = false;
+  setPresenceUI(false);
+}
+
+// ─────────────────────────────────────────────────
+//  Typing Indicators
+// ─────────────────────────────────────────────────
+function showOpponentTyping() {
+  opponentTyping = true;
+  clearTimeout(opponentTypingTimer);
+  if (userStatusEl) {
+    userStatusEl.textContent = 'typing...';
+    userStatusEl.classList.add('is-typing');
+  }
+  // Auto-clear after 4s if no stop event
+  opponentTypingTimer = setTimeout(hideOpponentTyping, 4000);
+}
+
+function hideOpponentTyping() {
+  opponentTyping = false;
+  if (userStatusEl) {
+    userStatusEl.textContent = isOpponentOnline ? 'Online' : 'Offline';
+    userStatusEl.classList.remove('is-typing');
+  }
+}
+
+// ─────────────────────────────────────────────────
+//  Incoming Chat Message (live-streaming animation)
+// ─────────────────────────────────────────────────
+function receiveIncomingMessage(text, timeStr) {
+  hideOpponentTyping();
+
+  const messageRow = document.createElement('div');
+  messageRow.className = 'message-row incoming';
+
+  const bubbleGroup = document.createElement('div');
+  bubbleGroup.className = 'bubble-group';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble live-typing-bubble';
+
+  const textNode   = document.createElement('span');
+  textNode.className = 'streaming-text';
+  const cursorNode = document.createElement('span');
+  cursorNode.className = 'streaming-cursor';
+
+  bubble.appendChild(textNode);
+  bubble.appendChild(cursorNode);
+  bubbleGroup.appendChild(bubble);
+  messageRow.appendChild(bubbleGroup);
+
+  chatMessages.insertBefore(messageRow, typingIndicator);
+  scrollToBottom();
+
+  // Stream text character by character
+  let i = 0;
+  function typeNext() {
+    if (i < text.length) {
+      i++;
+      textNode.textContent = text.slice(0, i);
+      playOpponentKeypressSound();
+      const ch = text[i - 1];
+      let delay = 22 + Math.random() * 28;
+      if (ch === ' ')  delay += 30;
+      if ('.,!?'.includes(ch)) delay += 100;
+      setTimeout(typeNext, delay);
+    } else {
+      cursorNode.remove();
+      bubble.classList.remove('live-typing-bubble');
+      const timeEl = document.createElement('div');
+      timeEl.className = 'message-time';
+      timeEl.textContent = timeStr || formatCurrentTime();
+      messageRow.appendChild(timeEl);
+      scrollToBottom();
     }
+  }
+  typeNext();
+}
 
-    // --- Live Typing Progress Handler ---
-    function handleTypingProgress(data) {
-        if (data.sender_id === clientId) return;
+// ─────────────────────────────────────────────────
+//  Send Message
+// ─────────────────────────────────────────────────
+function handleSend() {
+  const text = chatInput.value.trim();
+  if (!text) return;
 
-        if (data.is_typing) {
-            activeTypers.set(data.sender_id, {
-                sender_name: data.sender_name,
-                progress: data.progress,
-                char_count: data.char_count,
-                ghost_text: data.ghost_text,
-                last_seen: Date.now()
-            });
-        } else {
-            activeTypers.delete(data.sender_id);
-        }
+  appendMessage(text, 'outgoing');
+  chatInput.value = '';
+  chatInput.dispatchEvent(new Event('input'));
+  emojiPopover.classList.remove('show');
 
-        renderTypingIndicators();
+  // Send typing_stop
+  wsSend({ type: 'typing_stop' });
+  clearTimeout(typingOutTimer);
+
+  // Send the chat message
+  const sent = wsSend({ type: 'chat', text, time: formatCurrentTime() });
+  if (!sent) showToast('Not connected — message not delivered', 'error');
+}
+
+// ─────────────────────────────────────────────────
+//  Append Message Bubble
+// ─────────────────────────────────────────────────
+function appendMessage(content, type = 'outgoing', isImage = false) {
+  const messageRow = document.createElement('div');
+  messageRow.className = `message-row ${type}`;
+
+  const bubbleGroup = document.createElement('div');
+  bubbleGroup.className = 'bubble-group';
+
+  const bubble = document.createElement('div');
+  bubble.className = isImage ? 'bubble image-bubble' : 'bubble';
+
+  if (isImage) {
+    bubble.innerHTML = `<img src="${content}" alt="Shared photo" loading="lazy">`;
+  } else {
+    bubble.textContent = content;
+  }
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'message-time';
+  timeEl.textContent = formatCurrentTime();
+
+  bubbleGroup.appendChild(bubble);
+  messageRow.appendChild(bubbleGroup);
+  messageRow.appendChild(timeEl);
+
+  chatMessages.insertBefore(messageRow, typingIndicator);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 40);
+}
+
+// ─────────────────────────────────────────────────
+//  Voice Notes
+// ─────────────────────────────────────────────────
+function appendVoiceMessage(seconds, type = 'outgoing') {
+  const durationText = formatDuration(seconds);
+  const messageRow = document.createElement('div');
+  messageRow.className = `message-row ${type}`;
+
+  const bubbleGroup = document.createElement('div');
+  bubbleGroup.className = 'bubble-group';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  const heights = [6,14,22,10,18,24,16,12,20,8,15,22,9,14];
+  const barsHtml = heights.map(h => `<span style="height:${h}px;"></span>`).join('');
+
+  bubble.innerHTML = `
+    <div class="voice-bubble">
+      <button class="voice-play-btn" type="button" aria-label="Play Voice Note">
+        <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 19 12 6 20 6 4"></polygon></svg>
+        <svg class="pause-icon" style="display:none;" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>
+        </svg>
+      </button>
+      <div class="voice-waveform">${barsHtml}</div>
+      <span class="voice-duration">${durationText}</span>
+    </div>`;
+
+  const voiceBubble = bubble.querySelector('.voice-bubble');
+  const playBtn     = bubble.querySelector('.voice-play-btn');
+  const playIcon    = bubble.querySelector('.play-icon');
+  const pauseIcon   = bubble.querySelector('.pause-icon');
+  let isPlaying = false, playTimer = null;
+
+  playBtn.addEventListener('click', () => {
+    isPlaying = !isPlaying;
+    if (isPlaying) {
+      voiceBubble.classList.add('playing');
+      playIcon.style.display  = 'none';
+      pauseIcon.style.display = 'block';
+      clearTimeout(playTimer);
+      playTimer = setTimeout(() => {
+        isPlaying = false;
+        voiceBubble.classList.remove('playing');
+        playIcon.style.display  = 'block';
+        pauseIcon.style.display = 'none';
+      }, seconds * 1000);
+    } else {
+      clearTimeout(playTimer);
+      voiceBubble.classList.remove('playing');
+      playIcon.style.display  = 'block';
+      pauseIcon.style.display = 'none';
     }
+  });
 
-    function renderTypingIndicators() {
-        // Clean up expired typers (>3.5s idle)
-        const now = Date.now();
-        for (const [id, typer] of activeTypers.entries()) {
-            if (now - typer.last_seen > 3500) {
-                activeTypers.delete(id);
-            }
-        }
+  const timeEl = document.createElement('div');
+  timeEl.className   = 'message-time';
+  timeEl.textContent = formatCurrentTime();
 
-        if (activeTypers.size === 0) {
-            typingDock.classList.add('hidden');
-            ghostStreamBox.classList.add('hidden');
-            liveProgressBar.style.width = '0%';
-            return;
-        }
+  bubbleGroup.appendChild(bubble);
+  messageRow.appendChild(bubbleGroup);
+  messageRow.appendChild(timeEl);
+  chatMessages.insertBefore(messageRow, typingIndicator);
+  scrollToBottom();
+}
 
-        typingDock.classList.remove('hidden');
+// ─────────────────────────────────────────────────
+//  WebRTC — Audio Calls
+// ─────────────────────────────────────────────────
+async function startAudioCall() {
+  if (isCallActive) { restoreCall(); return; }
+  if (!isOpponentOnline) { showToast(`${currentPartner.name} is offline`, 'error'); return; }
 
-        // Grab latest active typer
-        const typersArray = Array.from(activeTypers.values());
-        const primaryTyper = typersArray[typersArray.length - 1];
+  isCaller = true;
+  isCallActive = true;
 
-        if (typersArray.length === 1) {
-            typingUsername.textContent = primaryTyper.sender_name;
-        } else {
-            typingUsername.textContent = `${primaryTyper.sender_name} + ${typersArray.length - 1} other(s)`;
-        }
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (err) {
+    showToast('Microphone access denied', 'error');
+    isCallActive = false;
+    return;
+  }
 
-        // Live progress percentage calculation
-        const percent = Math.min(100, Math.max(10, primaryTyper.progress || (primaryTyper.char_count * 2)));
-        liveProgressBar.style.width = `${percent}%`;
-        typingStats.textContent = `${primaryTyper.char_count} chars (${percent}%)`;
+  createPeerConnection();
+  localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
 
-        // Ghost Live Preview Stream
-        if (primaryTyper.ghost_text !== null && primaryTyper.ghost_text !== undefined && primaryTyper.ghost_text.length > 0) {
-            ghostStreamBox.classList.remove('hidden');
-            ghostStreamText.textContent = primaryTyper.ghost_text;
-        } else {
-            ghostStreamBox.classList.add('hidden');
-        }
+  const offer = await peerConn.createOffer();
+  await peerConn.setLocalDescription(offer);
+  wsSend({ type: 'call_offer', sdp: offer });
+
+  openCallModal('Calling...');
+}
+
+async function handleIncomingOffer(sdp) {
+  // If already in a call, reject
+  if (isCallActive) {
+    wsSend({ type: 'call_busy' });
+    return;
+  }
+
+  // Show ringing overlay
+  showIncomingCallUI();
+
+  // Store offer to process after user accepts
+  window._pendingOffer = sdp;
+}
+
+async function acceptCall() {
+  hideIncomingCallUI();
+  if (!window._pendingOffer) return;
+
+  isCallActive = true;
+  isCaller = false;
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (err) {
+    showToast('Microphone access denied', 'error');
+    wsSend({ type: 'call_reject' });
+    isCallActive = false;
+    return;
+  }
+
+  createPeerConnection();
+  localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
+
+  await peerConn.setRemoteDescription(new RTCSessionDescription(window._pendingOffer));
+  const answer = await peerConn.createAnswer();
+  await peerConn.setLocalDescription(answer);
+  wsSend({ type: 'call_answer', sdp: answer });
+
+  window._pendingOffer = null;
+  openCallModal('Connecting...');
+}
+
+function rejectCall() {
+  hideIncomingCallUI();
+  window._pendingOffer = null;
+  wsSend({ type: 'call_reject' });
+}
+
+async function handleCallAnswer(sdp) {
+  if (!peerConn) return;
+  await peerConn.setRemoteDescription(new RTCSessionDescription(sdp));
+}
+
+async function handleIceCandidate(candidate) {
+  if (!peerConn || !candidate) return;
+  try {
+    await peerConn.addIceCandidate(new RTCIceCandidate(candidate));
+  } catch (e) { /* ignore stale candidates */ }
+}
+
+function createPeerConnection() {
+  peerConn = new RTCPeerConnection(RTC_CONFIG);
+
+  peerConn.onicecandidate = (e) => {
+    if (e.candidate) {
+      wsSend({ type: 'call_ice', candidate: e.candidate.toJSON() });
     }
+  };
 
-    // --- Typing Emitter with Throttling ---
-    function emitTyping(isTyping) {
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-
-        const text = chatInput.value;
-        const charCount = text.length;
-        // Progress heuristic: target average message of ~80 chars for 100%
-        const progress = Math.min(100, Math.round((charCount / 80) * 100));
-
-        const payload = {
-            type: 'typing_progress',
-            is_typing: isTyping && charCount > 0,
-            char_count: charCount,
-            progress: progress,
-            ghost_text: (ghostModeEnabled && isTyping && charCount > 0) ? text : null
-        };
-
-        socket.send(JSON.stringify(payload));
+  peerConn.ontrack = (e) => {
+    if (!remoteAudioEl) {
+      remoteAudioEl = new Audio();
+      remoteAudioEl.autoplay = true;
     }
+    remoteAudioEl.srcObject = e.streams[0];
+  };
 
-    chatInput.addEventListener('input', () => {
-        // Auto-expand textarea
-        chatInput.style.height = 'auto';
-        chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
-
-        const now = Date.now();
-        // Throttle rapid keystroke updates to ~75ms for super fast response
-        if (now - lastTypingSendTime > 75) {
-            emitTyping(true);
-            lastTypingSendTime = now;
-        }
-
-        // Reset idle timeout
-        if (typingTimeout) clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-            emitTyping(false);
-        }, 1500);
-    });
-
-    toggleGhostMode.addEventListener('change', (e) => {
-        ghostModeEnabled = e.target.checked;
-        localStorage.setItem('livechat_ghost_mode', ghostModeEnabled);
-        if (chatInput.value.length > 0) {
-            emitTyping(true);
-        }
-    });
-
-    // --- Chat Renderers ---
-    function formatTime(timestamp) {
-        const d = new Date(timestamp * 1000);
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  peerConn.onconnectionstatechange = () => {
+    const state = peerConn.connectionState;
+    if (state === 'connected') {
+      startCallTimer();
+      if (callStatus)    callStatus.textContent = '00:00';
+      if (callStatusDot) callStatusDot.style.background = '#10B981';
     }
-
-    function escapeHTML(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+      closeWebRTCCall(false);
     }
+  };
+}
 
-    function appendChatMessage(msg) {
-        const isMine = msg.sender_id === clientId;
-        const row = document.createElement('div');
-        row.className = `message-bubble-row ${isMine ? 'mine' : ''}`;
-        row.id = `msg-row-${msg.id}`;
+function closeWebRTCCall(sendEndSignal = true) {
+  if (sendEndSignal && isCallActive) {
+    wsSend({ type: 'call_end' });
+  }
 
-        let fileHTML = '';
-        if (msg.file) {
-            if (msg.file.type && msg.file.type.startsWith('image/')) {
-                fileHTML = `<img src="${msg.file.data}" alt="Media" class="attached-media" onclick="window.open(this.src, '_blank')">`;
-            } else {
-                fileHTML = `<a href="${msg.file.data}" download="${msg.file.name || 'download'}" style="color: var(--primary-cyan); font-weight:600; display:block; margin-top:6px;">📎 ${escapeHTML(msg.file.name || 'File Attachment')}</a>`;
-            }
-        }
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  if (peerConn)    { peerConn.close(); peerConn = null; }
+  if (remoteAudioEl) { remoteAudioEl.srcObject = null; remoteAudioEl = null; }
 
-        // Parse simple markdown (code backticks, bold, urls)
-        let textContent = escapeHTML(msg.text);
-        textContent = textContent.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; font-family:var(--font-mono);">$1</code>');
-        textContent = textContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        textContent = textContent.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--primary-cyan); text-decoration:underline;">$1</a>');
+  isCallActive    = false;
+  isCallMinimized = false;
+  isMicMuted      = false;
+  clearInterval(callTimer);
+  callTimer   = null;
+  callSeconds = 0;
 
-        row.innerHTML = `
-            <div class="message-avatar">${msg.sender_avatar || '⚡'}</div>
-            <div class="message-content-wrapper">
-                <div class="message-meta">
-                    <span class="sender-name">${escapeHTML(msg.sender_name)}</span>
-                    <span>${formatTime(msg.timestamp)}</span>
-                </div>
-                <div class="message-bubble">
-                    <div>${textContent}</div>
-                    ${fileHTML}
-                </div>
-            </div>
-        `;
+  if (callModal)          callModal.classList.remove('active');
+  if (minimizedCallBanner) minimizedCallBanner.classList.remove('active');
+  if (voiceCallBtn)       voiceCallBtn.classList.remove('in-call');
+  hideIncomingCallUI();
+}
 
-        messagesContainer.appendChild(row);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
+function openCallModal(statusText) {
+  if (!callModal) return;
+  callName.textContent  = currentPartner.name;
+  callAvatar.src        = currentPartner.avatar;
+  callStatus.textContent = statusText;
+  if (callStatusDot) callStatusDot.style.background = '#F59E0B';
+  callModal.classList.add('active');
+  if (voiceCallBtn) voiceCallBtn.classList.add('in-call');
+  minimizedCallBanner && minimizedCallBanner.classList.remove('active');
+  if (callMicToggleBtn) callMicToggleBtn.classList.remove('active');
+  if (micLabel)         micLabel.textContent = 'Mute';
+  if (callSpeakerBtn)   callSpeakerBtn.classList.remove('active');
+}
 
-    // --- Sending Messages ---
-    function sendMessage() {
-        const text = chatInput.value.trim();
-        if (!text && !pendingAttachment) return;
+function startCallTimer() {
+  clearInterval(callTimer);
+  callSeconds = 0;
+  callTimer = setInterval(() => {
+    callSeconds++;
+    const mins = Math.floor(callSeconds / 60).toString().padStart(2, '0');
+    const secs = (callSeconds % 60).toString().padStart(2, '0');
+    const t = `${mins}:${secs}`;
+    if (callStatus)        callStatus.textContent = t;
+    if (minimizedCallTimer) minimizedCallTimer.textContent = t;
+  }, 1000);
+}
 
-        const payload = {
-            type: 'chat',
-            id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-            text: text,
-            file: pendingAttachment || null
-        };
+function minimizeCall() {
+  if (!isCallActive) return;
+  isCallMinimized = true;
+  callModal.classList.remove('active');
+  minimizedCallBanner.classList.add('active');
+  if (minimizedCallTimer) minimizedCallTimer.textContent = callStatus.textContent;
+}
 
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(payload));
-        }
+function restoreCall() {
+  if (!isCallActive) return;
+  isCallMinimized = false;
+  minimizedCallBanner.classList.remove('active');
+  callModal.classList.add('active');
+}
 
-        chatInput.value = '';
-        chatInput.style.height = 'auto';
-        pendingAttachment = null;
-        btnAttach.style.color = 'var(--text-muted)';
+// ─────────────────────────────────────────────────
+//  Incoming Call UI
+// ─────────────────────────────────────────────────
+function showIncomingCallUI() {
+  if (!incomingCallOverlay) return;
+  if (incomingCallerName)   incomingCallerName.textContent  = currentPartner.name;
+  if (incomingCallerAvatar) incomingCallerAvatar.src        = currentPartner.avatar;
+  incomingCallOverlay.classList.add('active');
 
-        emitTyping(false);
-    }
+  // Auto-reject after 30s if not answered
+  window._incomingCallTimeout = setTimeout(() => {
+    if (incomingCallOverlay.classList.contains('active')) rejectCall();
+  }, 30000);
+}
 
-    let pendingAttachment = null;
+function hideIncomingCallUI() {
+  clearTimeout(window._incomingCallTimeout);
+  if (incomingCallOverlay) incomingCallOverlay.classList.remove('active');
+}
 
-    btnSend.addEventListener('click', sendMessage);
+// ─────────────────────────────────────────────────
+//  Avatar / Presence UI
+// ─────────────────────────────────────────────────
+function applyOpponentProfile(url, name) {
+  if (userNameEl)  userNameEl.textContent = name;
+  if (callName)    callName.textContent   = name;
+  if (callAvatar)  callAvatar.src         = url;
+  currentPartner.avatar = url;
+  currentPartner.name   = name;
 
-    chatInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
+  if (avatarImg) {
+    avatarImg.style.opacity = '0.3';
+    const tmp = new Image();
+    tmp.onload  = () => { avatarImg.src = url; avatarImg.style.opacity = '1'; };
+    tmp.onerror = () => { avatarImg.style.opacity = '1'; };
+    tmp.src = url;
+  }
+  if (incomingCallerAvatar) incomingCallerAvatar.src = url;
+  if (incomingCallerName)   incomingCallerName.textContent = name;
+}
 
-    // --- File Attachment Handler ---
-    btnAttach.addEventListener('click', () => fileInput.click());
-
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        if (file.size > 8 * 1024 * 1024) {
-            alert("File size exceeds 8MB limit for real-time delivery.");
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (loadEvt) => {
-            pendingAttachment = {
-                name: file.name,
-                type: file.type,
-                size: file.size,
-                data: loadEvt.target.result
-            };
-            btnAttach.style.color = 'var(--primary-cyan)';
-            chatInput.placeholder = `Attached: ${file.name}. Type message and press Enter...`;
-            chatInput.focus();
-        };
-        reader.readAsDataURL(file);
-    });
-
-    // Drag & drop support
-    window.addEventListener('dragover', (e) => e.preventDefault());
-    window.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (e.dataTransfer.files.length > 0) {
-            fileInput.files = e.dataTransfer.files;
-            const event = new Event('change');
-            fileInput.dispatchEvent(event);
-        }
-    });
-
-    // Quick emoji picker
-    const quickEmojis = ['🔥', '⚡', '🚀', '❤️', '😂', '👍', '🎉', '💯', '✨'];
-    btnQuickEmoji.addEventListener('click', () => {
-        const randomEmoji = quickEmojis[Math.floor(Math.random() * quickEmojis.length)];
-        chatInput.value += randomEmoji;
-        chatInput.focus();
-        chatInput.dispatchEvent(new Event('input'));
-    });
-
-    // --- Presence Handler ---
-    function handlePresenceUpdate(data) {
-        if (data.event === 'join' && data.user && data.user.client_id !== clientId) {
-            window.soundEngine.playJoin();
-            appendSystemNotice(`${data.user.username} entered the room`);
-        } else if (data.event === 'leave' && data.user && data.user.client_id !== clientId) {
-            appendSystemNotice(`${data.user.username} left`);
-        }
-
-        if (data.members) {
-            peerCount.textContent = data.members.length;
-            renderPeerList(data.members);
-        }
-    }
-
-    function appendSystemNotice(text) {
-        const div = document.createElement('div');
-        div.className = 'system-message';
-        div.innerHTML = `<span>• ${escapeHTML(text)}</span>`;
-        messagesContainer.appendChild(div);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-
-    function renderPeerList(members) {
-        peerList.innerHTML = '';
-        members.forEach(member => {
-            const isMe = member.client_id === clientId;
-            const item = document.createElement('div');
-            item.className = `peer-item ${isMe ? 'current-user' : ''}`;
-            item.innerHTML = `
-                <div class="peer-avatar">
-                    ${member.avatar || '⚡'}
-                    <span class="status-dot"></span>
-                </div>
-                <div class="peer-info">
-                    <div class="peer-name">${escapeHTML(member.username)} ${isMe ? '(You)' : ''}</div>
-                    <div class="peer-status">${isMe ? 'Active now' : 'Online'}</div>
-                </div>
-                ${!isMe ? `<button class="call-peer-btn" data-peer-id="${member.client_id}" data-peer-name="${escapeHTML(member.username)}" title="Direct Video Call">📹 Call</button>` : ''}
-            `;
-            peerList.appendChild(item);
-        });
-
-        // Attach direct peer call handlers
-        peerList.querySelectorAll('.call-peer-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const targetId = e.target.getAttribute('data-peer-id');
-                const targetName = e.target.getAttribute('data-peer-name');
-                startWebRTCCall(targetId, targetName);
-            });
-        });
-    }
-
-    // --- WebRTC Signaling Integration ---
-    window.webRTCManager.setSignalCallback((targetId, subType, signal) => {
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        socket.send(JSON.stringify({
-            type: 'webrtc_signal',
-            sub_type: subType,
-            target_id: targetId,
-            signal: signal
-        }));
-    });
-
-    window.webRTCManager.setCallStateCallback((inCall) => {
-        if (inCall) {
-            videoOverlayDock.classList.remove('hidden');
-            btnStartCall.textContent = '📞 End Call';
-            btnStartCall.style.borderColor = '#ef4444';
-            btnStartCall.style.color = '#ef4444';
-        } else {
-            videoOverlayDock.classList.add('hidden');
-            btnStartCall.textContent = '📹 Video Call';
-            btnStartCall.style.borderColor = 'var(--primary-cyan)';
-            btnStartCall.style.color = 'var(--primary-cyan)';
-        }
-    });
-
-    async function startWebRTCCall(targetId = null, targetName = "Room") {
-        if (window.webRTCManager.inCall) {
-            window.webRTCManager.endCall(true);
-            return;
-        }
-
-        // If targetId is provided, direct call. Otherwise call first active peer or wait for answers
-        if (targetId) {
-            await window.webRTCManager.startCallWithPeer(targetId, targetName, true);
-        } else {
-            // Find first other active peer in the room
-            const otherPeerBtn = peerList.querySelector('.call-peer-btn');
-            if (otherPeerBtn) {
-                const pid = otherPeerBtn.getAttribute('data-peer-id');
-                const pname = otherPeerBtn.getAttribute('data-peer-name');
-                await window.webRTCManager.startCallWithPeer(pid, pname, true);
-            } else {
-                // Initialize local video and notify in chat
-                await window.webRTCManager.initLocalMedia(true, true);
-                window.webRTCManager.inCall = true;
-                if (window.webRTCManager.onCallStateChange) window.webRTCManager.onCallStateChange(true);
-                appendSystemNotice("Started video room. Waiting for peers to join...");
-            }
-        }
-    }
-
-    btnStartCall.addEventListener('click', () => startWebRTCCall());
-
-    btnHangup.addEventListener('click', () => {
-        window.webRTCManager.endCall(true);
-    });
-
-    btnMinimizeCall.addEventListener('click', () => {
-        videoOverlayDock.classList.add('hidden');
-    });
-
-    btnToggleMic.addEventListener('click', () => {
-        const isMuted = window.webRTCManager.toggleAudio();
-        btnToggleMic.classList.toggle('active-off', isMuted);
-        btnToggleMic.textContent = isMuted ? '🔇' : '🎙️';
-    });
-
-    btnToggleCamera.addEventListener('click', () => {
-        const isOff = window.webRTCManager.toggleVideo();
-        btnToggleCamera.classList.toggle('active-off', isOff);
-        btnToggleCamera.textContent = isOff ? '🚫' : '📷';
-    });
-
-    btnToggleScreen.addEventListener('click', async () => {
-        const isSharing = await window.webRTCManager.toggleScreenShare();
-        btnToggleScreen.classList.toggle('active-off', !isSharing);
-    });
-
-    // --- UI Controls & Utilities ---
-    btnToggleSound.addEventListener('click', () => {
-        const isMuted = window.soundEngine.toggleMute();
-        btnToggleSound.textContent = isMuted ? '🔇 Sound Off' : '🔔 Sound On';
-    });
-
-    btnShareRoom.addEventListener('click', () => {
-        const roomUrl = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
-        navigator.clipboard.writeText(roomUrl).then(() => {
-            const original = btnShareRoom.textContent;
-            btnShareRoom.textContent = '✅ Copied!';
-            setTimeout(() => { btnShareRoom.textContent = original; }, 2000);
-        }).catch(() => {
-            prompt("Share this room link with friends:", roomUrl);
-        });
-    });
-
-    currentRoomBadge.addEventListener('click', () => btnShareRoom.click());
-
-    // Window room switcher
-    window.switchRoom = (newRoom) => {
-        if (newRoom === roomId) return;
-        window.location.href = `/?room=${encodeURIComponent(newRoom)}`;
+// ─────────────────────────────────────────────────
+//  Event Listeners Setup
+// ─────────────────────────────────────────────────
+function setupEventListeners() {
+  // Sound toggle
+  if (soundToggleBtn) {
+    const onIcon  = soundToggleBtn.querySelector('.sound-on-icon');
+    const offIcon = soundToggleBtn.querySelector('.sound-off-icon');
+    const updateSoundUI = () => {
+      soundToggleBtn.classList.toggle('muted', !soundEnabled);
+      if (onIcon)  onIcon.style.display  = soundEnabled ? 'block' : 'none';
+      if (offIcon) offIcon.style.display = soundEnabled ? 'none'  : 'block';
+      soundToggleBtn.title = soundEnabled ? 'Typing sound ON (click to mute)' : 'Typing sound OFF (click to enable)';
     };
-
-    // --- Settings Modal ---
-    btnOpenSettings.addEventListener('click', () => {
-        modalUsernameInput.value = username;
-        modalRoomInput.value = roomId;
-
-        avatarGrid.querySelectorAll('.avatar-opt').forEach(opt => {
-            opt.classList.toggle('selected', opt.getAttribute('data-avatar') === avatar);
-        });
-
-        settingsModal.classList.remove('hidden');
+    updateSoundUI();
+    soundToggleBtn.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      localStorage.setItem('chat_typing_sound', soundEnabled);
+      updateSoundUI();
     });
+  }
 
-    avatarGrid.querySelectorAll('.avatar-opt').forEach(opt => {
-        opt.addEventListener('click', () => {
-            avatarGrid.querySelectorAll('.avatar-opt').forEach(o => o.classList.remove('selected'));
-            opt.classList.add('selected');
-            avatar = opt.getAttribute('data-avatar');
-        });
+  // Input — toggle mic/send icon + send typing events
+  chatInput.addEventListener('input', () => {
+    const text = chatInput.value.trim();
+    // Toggle mic ↔ send icon
+    if (text.length > 0) {
+      actionBtn.classList.add('send-mode');
+      actionIcon.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+    } else {
+      actionBtn.classList.remove('send-mode');
+      if (!isRecording) setMicIconDefault();
+    }
+    // Typing indicator events
+    if (text.length > 0) {
+      wsSend({ type: 'typing_start' });
+      clearTimeout(typingOutTimer);
+      typingOutTimer = setTimeout(() => wsSend({ type: 'typing_stop' }), 2000);
+    } else {
+      clearTimeout(typingOutTimer);
+      wsSend({ type: 'typing_stop' });
+    }
+  });
+
+  // Enter to send
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  });
+
+  // Send/Mic button
+  actionBtn.addEventListener('click', () => {
+    if (chatInput.value.trim()) handleSend();
+    else toggleVoiceRecording();
+  });
+
+  // Cancel recording
+  if (cancelRecordBtn) cancelRecordBtn.addEventListener('click', (e) => { e.stopPropagation(); cancelVoiceRecording(); });
+
+  // Lock app
+  if (lockAppBtn) lockAppBtn.addEventListener('click', lockApp);
+
+  // Call button
+  if (voiceCallBtn) {
+    voiceCallBtn.addEventListener('click', () => {
+      if (isCallActive) restoreCall();
+      else startAudioCall();
     });
+  }
 
-    btnSaveSettings.addEventListener('click', () => {
-        const newName = modalUsernameInput.value.trim();
-        const newRoom = modalRoomInput.value.trim();
+  // Incoming call accept/reject
+  if (acceptCallBtn) acceptCallBtn.addEventListener('click', acceptCall);
+  if (rejectCallBtn) rejectCallBtn.addEventListener('click', rejectCall);
 
-        if (newName) {
-            username = newName;
-            localStorage.setItem('livechat_username', username);
-        }
-        localStorage.setItem('livechat_avatar', avatar);
-
-        settingsModal.classList.add('hidden');
-        updateProfileUI();
-
-        if (newRoom && newRoom !== roomId) {
-            window.location.href = `/?room=${encodeURIComponent(newRoom)}`;
-        } else {
-            // Reconnect websocket with new profile
-            if (socket) socket.close();
-            connectWebSocket();
-        }
+  // Active call controls
+  if (endCallBtn)       endCallBtn.addEventListener('click',       () => closeWebRTCCall(true));
+  if (callMinimizeBtn)  callMinimizeBtn.addEventListener('click',  minimizeCall);
+  if (callChatBackBtn)  callChatBackBtn.addEventListener('click',  minimizeCall);
+  if (minimizedCallBanner) {
+    minimizedCallBanner.addEventListener('click', (e) => {
+      if (!e.target.closest('#minimizedEndCallBtn')) restoreCall();
     });
+  }
+  if (minimizedEndCallBtn) minimizedEndCallBtn.addEventListener('click', (e) => { e.stopPropagation(); closeWebRTCCall(true); });
 
-    settingsModal.addEventListener('click', (e) => {
-        if (e.target === settingsModal) {
-            settingsModal.classList.add('hidden');
-        }
+  if (callMicToggleBtn) {
+    callMicToggleBtn.addEventListener('click', () => {
+      isMicMuted = !isMicMuted;
+      callMicToggleBtn.classList.toggle('active', isMicMuted);
+      if (micLabel) micLabel.textContent = isMicMuted ? 'Unmute' : 'Mute';
+      if (localStream) localStream.getAudioTracks().forEach(t => { t.enabled = !isMicMuted; });
     });
+  }
+  if (callSpeakerBtn) callSpeakerBtn.addEventListener('click', () => callSpeakerBtn.classList.toggle('active'));
 
-    // Start App!
-    connectWebSocket();
-})();
+  // Emoji
+  if (emojiBtn) {
+    emojiBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      emojiPopover.classList.toggle('show');
+    });
+    document.querySelectorAll('.emoji-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        chatInput.value += btn.textContent;
+        chatInput.dispatchEvent(new Event('input'));
+        emojiPopover.classList.remove('show');
+        chatInput.focus();
+      });
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#emojiPopover') && !e.target.closest('#emojiBtn')) {
+        emojiPopover.classList.remove('show');
+      }
+    });
+  }
+
+  // Image upload
+  if (imageBtn) imageBtn.addEventListener('click', () => imageInput.click());
+  if (imageInput) imageInput.addEventListener('change', handleImageUpload);
+}
+
+// ─────────────────────────────────────────────────
+//  Image Upload
+// ─────────────────────────────────────────────────
+function handleImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    appendMessage(ev.target.result, 'outgoing', true);
+    wsSend({ type: 'image', dataUrl: ev.target.result });
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+// ─────────────────────────────────────────────────
+//  Voice Recording
+// ─────────────────────────────────────────────────
+function toggleVoiceRecording() {
+  if (!isRecording) startVoiceRecording();
+  else stopAndSendVoiceRecording();
+}
+
+function startVoiceRecording() {
+  isRecording = true;
+  recordingSeconds = 0;
+  recordingTimer.textContent = '0:00';
+  inputNormalContent.style.display = 'none';
+  inputRecordingContent.style.display = 'flex';
+  actionBtn.classList.add('recording-active');
+  actionIcon.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="3"></rect></svg>`;
+  clearInterval(recordingInterval);
+  recordingInterval = setInterval(() => {
+    recordingSeconds++;
+    recordingTimer.textContent = formatDuration(recordingSeconds);
+  }, 1000);
+}
+
+function stopAndSendVoiceRecording() {
+  clearInterval(recordingInterval);
+  const dur = recordingSeconds > 0 ? recordingSeconds : 1;
+  isRecording = false;
+  inputRecordingContent.style.display = 'none';
+  inputNormalContent.style.display = 'flex';
+  setMicIconDefault();
+
+  appendVoiceMessage(dur, 'outgoing');
+  wsSend({ type: 'voice', duration: dur });
+}
+
+function cancelVoiceRecording() {
+  clearInterval(recordingInterval);
+  isRecording = false;
+  inputRecordingContent.style.display = 'none';
+  inputNormalContent.style.display = 'flex';
+  setMicIconDefault();
+}
+
+function setMicIconDefault() {
+  actionBtn.classList.remove('recording-active', 'send-mode');
+  actionIcon.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>`;
+}
+
+// ─────────────────────────────────────────────────
+//  Keyboard UI Handling
+// ─────────────────────────────────────────────────
+function setupKeyboardUIHandling() {
+  if (window.visualViewport) {
+    const onVP = () => {
+      if (chatApp) chatApp.style.height = `${window.visualViewport.height}px`;
+      scrollToBottom();
+    };
+    window.visualViewport.addEventListener('resize', onVP);
+    window.visualViewport.addEventListener('scroll', onVP);
+  }
+  chatInput.addEventListener('focus', () => {
+    inputPill.classList.add('focused');
+    emojiPopover.classList.remove('show');
+    setTimeout(scrollToBottom, 250);
+  });
+  chatInput.addEventListener('blur', () => inputPill.classList.remove('focused'));
+}
+
+// ─────────────────────────────────────────────────
+//  Toast Notification
+// ─────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(message, type = 'info') {
+  let toast = document.getElementById('liveToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'liveToast';
+    document.getElementById('chatApp').appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.className = `live-toast live-toast--${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+}
+
+// ─────────────────────────────────────────────────
+//  Keypress Sound System
+// ─────────────────────────────────────────────────
+function getAudioContext() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) audioCtx = new Ctx();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+async function preloadKeypressSounds() {
+  if (audioBuffersLoaded) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const buffers = await Promise.all(SOUND_FILES.map(async (f) => {
+      const res = await fetch(`${soundBasePath}${f}`);
+      const ab  = await res.arrayBuffer();
+      return ctx.decodeAudioData(ab);
+    }));
+    KEYPRESS_AUDIO_BUFFERS.push(...buffers);
+    audioBuffersLoaded = true;
+  } catch (e) { /* silent */ }
+}
+
+const fallbackAudio = SOUND_FILES.map((f) => {
+  const a = new Audio(`${soundBasePath}${f}`);
+  a.volume = 0.55;
+  return a;
+});
+
+['click','keydown','touchstart','mousedown'].forEach(ev =>
+  window.addEventListener(ev, () => { getAudioContext(); preloadKeypressSounds(); }, { once: true, passive: true })
+);
+
+function playOpponentKeypressSound() {
+  if (!soundEnabled) return;
+  const ctx = getAudioContext();
+  let idx = Math.floor(Math.random() * SOUND_FILES.length);
+  if (idx === lastSoundIndex) idx = (idx + 1) % SOUND_FILES.length;
+  lastSoundIndex = idx;
+
+  if (ctx && audioBuffersLoaded && KEYPRESS_AUDIO_BUFFERS[idx]) {
+    try {
+      const src  = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      src.buffer = KEYPRESS_AUDIO_BUFFERS[idx];
+      gain.gain.value = 0.55 * (0.96 + Math.random() * 0.08);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(0);
+    } catch (_) { /* ignore */ }
+  } else {
+    const clone = fallbackAudio[idx].cloneNode();
+    clone.volume = 0.5;
+    clone.play().catch(() => {});
+  }
+}
+
+// ─────────────────────────────────────────────────
+//  Utility
+// ─────────────────────────────────────────────────
+function formatCurrentTime() {
+  const now = new Date();
+  let h = now.getHours();
+  const m = now.getMinutes().toString().padStart(2, '0');
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
+}
+
+function formatDuration(sec) {
+  return `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, '0')}`;
+}

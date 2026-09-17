@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Live Chat - Jack King</title>
   <meta name="description" content="Clean mobile chat application UI with free random avatar API integration.">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="static/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -314,7 +314,6 @@
             </svg>
           </div>
           <h2 class="pin-title">Enter Passcode</h2>
-          <p class="pin-subtitle">Jisu (1470) • Jenu (3690)</p>
         </div>
 
         <!-- 4 PIN Dots Indicator -->
@@ -354,14 +353,17 @@
     <!-- ══ Incoming Call Ringing Overlay ══ -->
     <div class="incoming-call-overlay" id="incomingCallOverlay" role="dialog" aria-label="Incoming call">
       <div class="incoming-call-card">
+        <!-- Animated pulse rings -->
         <div class="incoming-pulse-rings">
           <div class="ipr ipr-1"></div>
           <div class="ipr ipr-2"></div>
           <div class="ipr ipr-3"></div>
         </div>
+        <!-- Caller Info -->
         <img class="incoming-caller-avatar" id="incomingCallerAvatar" src="" alt="Caller">
         <div class="incoming-call-label">Incoming call</div>
         <div class="incoming-caller-name" id="incomingCallerName">Caller</div>
+        <!-- Action Buttons -->
         <div class="incoming-call-actions">
           <div class="incoming-action-item">
             <button class="incoming-btn reject-btn" id="rejectCallBtn" aria-label="Reject call">
@@ -385,6 +387,6 @@
 
   </div>
 
-  <script src="app.js"></script>
+  <script src="static/app.js"></script>
 </body>
 </html>
