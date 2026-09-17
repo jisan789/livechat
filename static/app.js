@@ -14,9 +14,6 @@ const chatInput          = document.getElementById('chatInput');
 const actionBtn          = document.getElementById('actionBtn');
 const actionIcon         = document.getElementById('actionIcon');
 const typingIndicator    = document.getElementById('typingIndicator');
-const livePreviewRow     = document.getElementById('livePreviewRow');
-const livePreviewLabel   = document.getElementById('livePreviewLabel');
-const livePreviewText    = document.getElementById('livePreviewText');
 const emojiPopover       = document.getElementById('emojiPopover');
 const emojiBtn           = document.getElementById('emojiBtn');
 const inputPill          = document.getElementById('inputPill');
@@ -245,9 +242,13 @@ function lockApp() {
   updatePinDotsUI();
   clearPinFeedback();
 
-  // Clear rendered message bubbles on lock (preserve live preview row)
-  document.querySelectorAll('#chatMessages .message-row:not(#livePreviewRow)').forEach(row => row.remove());
-  hideOpponentLivePreview();
+  // Clear rendered message bubbles on lock
+  document.querySelectorAll('#chatMessages .message-row').forEach(row => row.remove());
+  if (currentLiveIncomingRow) {
+    currentLiveIncomingRow = null;
+  }
+  lastOpponentTextLength = 0;
+  hideOpponentTyping();
 
   if (pinOverlay) pinOverlay.classList.remove('unlocked');
   setPresenceOffline();
@@ -479,67 +480,81 @@ function setPresenceOffline() {
 }
 
 // ─────────────────────────────────────────────────
-//  Typing Indicators & Real-Time Live Preview
+//  Typing Indicators & Live Keystroke Stream
 // ─────────────────────────────────────────────────
+let currentLiveIncomingRow = null;
 let lastOpponentTextLength = 0;
 
 function handleOpponentLiveTyping(text) {
   clearTimeout(opponentTypingTimer);
 
-  if (!text || text.trim() === '') {
-    hideOpponentLivePreview();
+  if (!text || text.length === 0) {
+    if (currentLiveIncomingRow) {
+      currentLiveIncomingRow.remove();
+      currentLiveIncomingRow = null;
+    }
+    lastOpponentTextLength = 0;
+    hideOpponentTyping();
     return;
   }
 
+  // Update status to typing...
   opponentTyping = true;
   if (userStatusEl) {
     userStatusEl.textContent = 'typing...';
     userStatusEl.classList.add('is-typing');
   }
-
-  if (livePreviewRow && livePreviewText) {
-    // Ensure live preview row is at the very bottom of the chat list
-    chatMessages.appendChild(livePreviewRow);
-    if (typingIndicator) {
-      chatMessages.appendChild(typingIndicator);
-      typingIndicator.classList.remove('active');
-    }
-
-    if (livePreviewLabel) {
-      livePreviewLabel.textContent = `${currentPartner.name || 'Opponent'} is typing:`;
-    }
-
-    // Play subtle keystroke sound as new characters arrive
-    if (text.length > lastOpponentTextLength) {
-      playOpponentKeypressSound();
-    }
-    lastOpponentTextLength = text.length;
-
-    livePreviewText.textContent = text;
-    livePreviewRow.classList.add('active');
-    scrollToBottom();
-  }
-
-  // Auto-hide if inactive for 6s
-  opponentTypingTimer = setTimeout(hideOpponentLivePreview, 6000);
-}
-
-function hideOpponentLivePreview() {
-  lastOpponentTextLength = 0;
-  opponentTyping = false;
-  if (userStatusEl) {
-    userStatusEl.textContent = isOpponentOnline ? 'Online' : 'Offline';
-    userStatusEl.classList.remove('is-typing');
-  }
-  if (livePreviewRow) {
-    livePreviewRow.classList.remove('active');
-  }
-  if (livePreviewText) {
-    livePreviewText.textContent = '';
-  }
   if (typingIndicator) {
     typingIndicator.classList.remove('active');
   }
+
+  // Create standard incoming bubble if it does not exist yet
+  if (!currentLiveIncomingRow) {
+    currentLiveIncomingRow = document.createElement('div');
+    currentLiveIncomingRow.className = 'message-row incoming';
+
+    const bubbleGroup = document.createElement('div');
+    bubbleGroup.className = 'bubble-group';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble live-typing-bubble';
+
+    const textNode = document.createElement('span');
+    textNode.className = 'streaming-text';
+
+    const cursorNode = document.createElement('span');
+    cursorNode.className = 'streaming-cursor';
+
+    bubble.appendChild(textNode);
+    bubble.appendChild(cursorNode);
+    bubbleGroup.appendChild(bubble);
+    currentLiveIncomingRow.appendChild(bubbleGroup);
+
+    chatMessages.insertBefore(currentLiveIncomingRow, typingIndicator);
+  }
+
+  const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
+  if (textNode) {
+    textNode.textContent = text;
+  }
+
+  // Play subtle keypress sound as characters are typed
+  if (text.length > lastOpponentTextLength) {
+    playOpponentKeypressSound();
+  }
+  lastOpponentTextLength = text.length;
+
+  scrollToBottom();
+
+  // Auto-cleanup after 10s of silence if abandoned
+  opponentTypingTimer = setTimeout(() => {
+    if (currentLiveIncomingRow) {
+      currentLiveIncomingRow.remove();
+      currentLiveIncomingRow = null;
+    }
+    lastOpponentTextLength = 0;
+    hideOpponentTyping();
+  }, 10000);
 }
 
 function showOpponentTyping() {
@@ -549,27 +564,60 @@ function showOpponentTyping() {
     userStatusEl.textContent = 'typing...';
     userStatusEl.classList.add('is-typing');
   }
-  if (typingIndicator && (!livePreviewRow || !livePreviewRow.classList.contains('active'))) {
+  if (!currentLiveIncomingRow && typingIndicator) {
     typingIndicator.classList.add('active');
     scrollToBottom();
   }
-  opponentTypingTimer = setTimeout(hideOpponentLivePreview, 4000);
+  opponentTypingTimer = setTimeout(hideOpponentTyping, 4000);
 }
 
 function hideOpponentTyping() {
-  hideOpponentLivePreview();
+  opponentTyping = false;
+  if (userStatusEl) {
+    userStatusEl.textContent = isOpponentOnline ? 'Online' : 'Offline';
+    userStatusEl.classList.remove('is-typing');
+  }
+  if (typingIndicator) {
+    typingIndicator.classList.remove('active');
+  }
 }
 
 // ─────────────────────────────────────────────────
 //  Incoming Chat Message
 // ─────────────────────────────────────────────────
 function receiveIncomingMessage(text, timeStr, messageId = null) {
-  hideOpponentLivePreview();
+  hideOpponentTyping();
 
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
     return;
   }
 
+  // If the message was already being typed live, finalize that exact bubble!
+  if (currentLiveIncomingRow) {
+    const bubble = currentLiveIncomingRow.querySelector('.bubble');
+    const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
+    const cursorNode = currentLiveIncomingRow.querySelector('.streaming-cursor');
+
+    if (textNode) textNode.textContent = text;
+    if (cursorNode) cursorNode.remove();
+    if (bubble) bubble.classList.remove('live-typing-bubble');
+
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    timeEl.textContent = timeStr || formatCurrentTime();
+    currentLiveIncomingRow.appendChild(timeEl);
+
+    if (messageId) {
+      currentLiveIncomingRow.dataset.msgId = messageId;
+    }
+
+    currentLiveIncomingRow = null;
+    lastOpponentTextLength = 0;
+    scrollToBottom();
+    return;
+  }
+
+  // Otherwise, append standard incoming message bubble
   appendMessage(text, 'incoming', timeStr, messageId);
 }
 
@@ -624,8 +672,7 @@ function appendMessage(content, type = 'outgoing', timeStr = null, messageId = n
   messageRow.appendChild(bubbleGroup);
   messageRow.appendChild(timeEl);
 
-  const target = livePreviewRow || typingIndicator;
-  chatMessages.insertBefore(messageRow, target);
+  chatMessages.insertBefore(messageRow, typingIndicator);
   scrollToBottom();
 }
 
@@ -702,8 +749,7 @@ function appendVoiceMessage(seconds, type = 'outgoing', timeStr = null, messageI
   bubbleGroup.appendChild(bubble);
   messageRow.appendChild(bubbleGroup);
   messageRow.appendChild(timeEl);
-  const target = livePreviewRow || typingIndicator;
-  chatMessages.insertBefore(messageRow, target);
+  chatMessages.insertBefore(messageRow, typingIndicator);
   scrollToBottom();
 }
 
