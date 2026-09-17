@@ -790,71 +790,12 @@ async function drainPendingIceCandidates() {
 }
 
 async function startAudioCall() {
-  if (isCallActive) { restoreCall(); return; }
-  if (!isOpponentOnline) { showToast(`${currentPartner.name} is offline`, 'error'); return; }
-
-  isCaller = true;
-  isCallActive = true;
-  pendingIceCandidates = [];
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: false
-    });
-  } catch (err) {
-    console.error('[RTC] getUserMedia error:', err);
-    isCallActive = false;
-    isCaller = false;
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showToast('Microphone permission denied — allow mic in browser settings', 'error');
-    } else if (err.name === 'NotFoundError') {
-      showToast('No microphone found on this device', 'error');
-    } else {
-      showToast('Cannot access microphone: ' + err.message, 'error');
-    }
-    return;
-  }
-
-  createPeerConnection();
-  localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
-
-  try {
-    const offer = await peerConn.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: false
-    });
-    await peerConn.setLocalDescription(offer);
-    wsSend({ type: 'call_offer', sdp: offer });
-    openCallModal('Calling...');
-    startIceTimeout();
-  } catch (err) {
-    console.error('[RTC] Error creating offer:', err);
-    showToast('Could not start call: ' + err.message, 'error');
-    closeWebRTCCall(false);
-  }
+  showToast('Calling feature is under development', 'info');
 }
 
 async function handleIncomingOffer(sdp) {
-  // If already in a call, reject
-  if (isCallActive) {
-    wsSend({ type: 'call_busy' });
-    return;
-  }
-
-  // Store offer and reset pending candidate queue
-  window._pendingOffer = sdp;
-  pendingIceCandidates = [];
-
-  // Notify caller that callee's phone is ringing
-  wsSend({ type: 'call_ringing' });
-
-  // Show ringing overlay
-  showIncomingCallUI();
+  // Calling feature is under development
+  wsSend({ type: 'call_reject' });
 }
 
 async function acceptCall() {
@@ -1266,8 +1207,7 @@ function setupEventListeners() {
   // Call button
   if (voiceCallBtn) {
     voiceCallBtn.addEventListener('click', () => {
-      if (isCallActive) restoreCall();
-      else startAudioCall();
+      showToast('Calling feature is under development', 'info');
     });
   }
 
