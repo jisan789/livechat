@@ -329,6 +329,8 @@ body {
   max-width: 82%;
   animation: messageSlide 0.22s ease-out forwards;
   touch-action: manipulation;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
@@ -339,7 +341,7 @@ body {
 /* Extra breathing room when speaker changes */
 .message-row.outgoing + .message-row.incoming,
 .message-row.incoming + .message-row.outgoing {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 @keyframes messageSlide {
@@ -511,12 +513,32 @@ body {
 }
 
 .message-time {
-  font-size: 10.5px;
+  display: none;
+  font-size: 10px;
   line-height: 1.1;
   color: var(--text-muted);
   font-weight: 400;
   margin-top: 2px;
+  margin-bottom: 2px;
   padding: 0 4px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.message-row.show-time > .message-time {
+  display: block;
+  animation: messageTimeAppear 0.15s ease-out forwards;
+}
+
+@keyframes messageTimeAppear {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Seen Status Indicator (Tiny vivid green dot at bottom-right corner of outgoing bubble) */

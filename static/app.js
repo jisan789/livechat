@@ -958,6 +958,13 @@ function triggerLoveReact(messageRow, isLocal = true) {
 
   const msgId = messageRow.dataset.msgId;
 
+  // Prevent double-tap gesture from toggling or leaving the timestamp visible
+  messageRow.dataset.justReacted = 'true';
+  messageRow.classList.remove('show-time');
+  setTimeout(() => {
+    if (messageRow) messageRow.dataset.justReacted = '';
+  }, 450);
+
   // 1. Play bursting heart pop animation
   createHeartPopBurst(bubble);
 
@@ -1876,6 +1883,48 @@ function setupEventListeners() {
       if (!e.target.closest('#emojiPopover') && !e.target.closest('#emojiBtn')) {
         if (Date.now() - lastEmojiBtnTouchTime < 400) return;
         emojiPopover.classList.remove('show');
+      }
+    });
+  }
+
+  // ── Click Message to Toggle Timestamp ──
+  // Show message time only when clicking the message, otherwise hide it.
+  // Clicking outside messages dismisses any open timestamp.
+  if (chatMessages) {
+    chatMessages.addEventListener('click', (e) => {
+      const row = e.target.closest('.message-row');
+      if (!row) {
+        // Clicked outside messages (chat background): dismiss all open timestamps
+        document.querySelectorAll('.message-row.show-time').forEach(el => el.classList.remove('show-time'));
+        return;
+      }
+
+      // Ignore clicks on specific interactive controls (voice play/seek, love react badge)
+      if (e.target.closest('.voice-play-btn') || 
+          e.target.closest('.voice-waveform') || 
+          e.target.closest('.love-react-badge')) {
+        return;
+      }
+
+      // If user recently double-tapped to react, ignore this click
+      if (row.dataset.justReacted === 'true') {
+        row.dataset.justReacted = '';
+        return;
+      }
+
+      const isCurrentlyShown = row.classList.contains('show-time');
+
+      // Close all other open timestamps so only the clicked message is active
+      document.querySelectorAll('.message-row.show-time').forEach(el => {
+        if (el !== row) el.classList.remove('show-time');
+      });
+
+      // Toggle timestamp on the clicked message
+      row.classList.toggle('show-time', !isCurrentlyShown);
+
+      // Keep input focused if it was active
+      if (document.activeElement === chatInput) {
+        keepInputFocused();
       }
     });
   }
