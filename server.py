@@ -1,6 +1,6 @@
 """
-LiveChat WebSocket + WebRTC Signaling Server
-FastAPI backend for real-time 2-user chat and audio calls.
+LiveChat WebSocket Server
+FastAPI backend for real-time 2-user chat.
 Deploy on Render — reads PORT env variable automatically.
 """
 

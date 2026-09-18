@@ -1,4 +1,4 @@
-// LiveChat — Real-time WebSocket + WebRTC Client
+// LiveChat — Real-time WebSocket Client
 // Jisu (PIN 1470) ↔ Jenu (PIN 3690)
 
 // ─────────────────────────────────────────────────
@@ -26,28 +26,6 @@ const pinOverlay         = document.getElementById('pinOverlay');
 const pinDotsContainer   = document.getElementById('pinDots');
 const pinFeedback        = document.getElementById('pinFeedback');
 const pinBackspaceBtn    = document.getElementById('pinBackspaceBtn');
-// Call UI
-const callModal          = document.getElementById('callModal');
-const callAvatar         = document.getElementById('callAvatar');
-const callName           = document.getElementById('callName');
-const callStatus         = document.getElementById('callStatus');
-const callStatusDot      = document.getElementById('callStatusDot');
-const endCallBtn         = document.getElementById('endCallBtn');
-const voiceCallBtn       = document.getElementById('voiceCallBtn');
-const callMinimizeBtn    = document.getElementById('callMinimizeBtn');
-const callMicToggleBtn   = document.getElementById('callMicToggleBtn');
-const callSpeakerBtn     = document.getElementById('callSpeakerBtn');
-const callChatBackBtn    = document.getElementById('callChatBackBtn');
-const micLabel           = document.getElementById('micLabel');
-const minimizedCallBanner = document.getElementById('minimizedCallBanner');
-const minimizedCallTimer  = document.getElementById('minimizedCallTimer');
-const minimizedEndCallBtn = document.getElementById('minimizedEndCallBtn');
-// Incoming call UI
-const incomingCallOverlay = document.getElementById('incomingCallOverlay');
-const incomingCallerName  = document.getElementById('incomingCallerName');
-const incomingCallerAvatar = document.getElementById('incomingCallerAvatar');
-const acceptCallBtn       = document.getElementById('acceptCallBtn');
-const rejectCallBtn       = document.getElementById('rejectCallBtn');
 
 // ─────────────────────────────────────────────────
 //  User Profiles
@@ -87,20 +65,6 @@ let wsReconnectDelay = 1000;
 let wsReconnectTimer = null;
 let isManualDisconnect = false;
 
-// WebRTC state
-let peerConn        = null;
-let localStream     = null;
-let remoteAudioEl   = null;
-let isMicMuted      = false;
-let isCaller        = false;
-let pendingIceCandidates = [];
-
-// Call UI state
-let isCallActive    = false;
-let isCallMinimized = false;
-let callTimer       = null;
-let callSeconds     = 0;
-
 // Typing state
 let typingOutTimer    = null;
 let opponentTyping    = false;
@@ -118,51 +82,6 @@ const SOUND_FILES = [
   'keypress-001.wav','keypress-002.wav','keypress-003.wav','keypress-004.wav',
   'keypress-005.wav','keypress-006.wav','keypress-007.wav','keypress-008.wav'
 ];
-
-// WebRTC config — STUN + public TURN servers for NAT traversal
-const RTC_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    // Public TURN servers — fallback for strict NAT environments
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ],
-  iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all'
-};
-
-// ICE connection timeout — if ICE gathering doesn't connect in 18s, fail cleanly
-let iceConnectionTimeout = null;
-function startIceTimeout() {
-  clearTimeout(iceConnectionTimeout);
-  iceConnectionTimeout = setTimeout(() => {
-    if (peerConn && peerConn.iceConnectionState !== 'connected' && peerConn.iceConnectionState !== 'completed') {
-      console.warn('[RTC] ICE timeout — could not connect after 18s');
-      showToast('Call failed — could not connect (network issue)', 'error');
-      closeWebRTCCall(true);
-    }
-  }, 18000);
-}
-function clearIceTimeout() {
-  clearTimeout(iceConnectionTimeout);
-  iceConnectionTimeout = null;
-}
 
 // ─────────────────────────────────────────────────
 //  Boot
@@ -303,7 +222,6 @@ function loginUser(userKey) {
 function lockApp() {
   isManualDisconnect = true;
   disconnectWebSocket();
-  closeWebRTCCall(false);
 
   activeUser = null;
   sessionStorage.removeItem('chat_active_user');
@@ -495,44 +413,6 @@ function handleWsMessage(msg) {
 
     case 'typing_stop':
       hideOpponentLivePreview();
-      break;
-
-    // ── WebRTC Signaling ──────────────────────────
-    case 'call_offer':
-      handleIncomingOffer(msg.sdp);
-      break;
-
-    case 'call_ringing':
-      // Callee phone is ringing — update caller from "Calling..." to "Ringing..."
-      if (callStatus) callStatus.textContent = 'Ringing...';
-      break;
-
-    case 'call_answer':
-      // Callee accepted — show "Connecting..." while ICE negotiates
-      if (callStatus) callStatus.textContent = 'Connecting...';
-      handleCallAnswer(msg.sdp);
-      break;
-
-    case 'call_ice':
-      handleIceCandidate(msg.candidate);
-      break;
-
-    case 'call_end':
-      clearIceTimeout();
-      closeWebRTCCall(false);
-      showToast(`${currentPartner.name} ended the call`);
-      break;
-
-    case 'call_reject':
-      clearIceTimeout();
-      closeWebRTCCall(false);
-      showToast(`${currentPartner.name} declined the call`, 'error');
-      break;
-
-    case 'call_busy':
-      clearIceTimeout();
-      closeWebRTCCall(false);
-      showToast(`${currentPartner.name} is busy in another call`, 'error');
       break;
   }
 }
@@ -772,299 +652,11 @@ function scrollToBottom() {
   setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 40);
 }
 
-
-
-// ─────────────────────────────────────────────────
-//  WebRTC — Audio Calls
-// ─────────────────────────────────────────────────
-async function drainPendingIceCandidates() {
-  if (!peerConn || !peerConn.remoteDescription || !peerConn.remoteDescription.type) return;
-  while (pendingIceCandidates.length > 0) {
-    const candidate = pendingIceCandidates.shift();
-    try {
-      await peerConn.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (e) {
-      console.warn('[RTC] error adding buffered candidate:', e);
-    }
-  }
-}
-
-async function startAudioCall() {
-  showToast('Calling feature is under development', 'info');
-}
-
-async function handleIncomingOffer(sdp) {
-  // Calling feature is under development
-  wsSend({ type: 'call_reject' });
-}
-
-async function acceptCall() {
-  hideIncomingCallUI();
-  if (!window._pendingOffer) return;
-
-  isCallActive = true;
-  isCaller = false;
-  openCallModal('Connecting...');
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: false
-    });
-  } catch (err) {
-    console.error('[RTC] getUserMedia error on accept:', err);
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showToast('Microphone permission denied — allow mic in browser settings', 'error');
-    } else if (err.name === 'NotFoundError') {
-      showToast('No microphone found on this device', 'error');
-    } else {
-      showToast('Cannot access microphone: ' + err.message, 'error');
-    }
-    wsSend({ type: 'call_reject' });
-    closeWebRTCCall(false);
-    return;
-  }
-
-  createPeerConnection();
-  localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
-  startIceTimeout();
-
-  try {
-    await peerConn.setRemoteDescription(new RTCSessionDescription(window._pendingOffer));
-    window._pendingOffer = null;
-    await drainPendingIceCandidates();
-
-    const answer = await peerConn.createAnswer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: false
-    });
-    await peerConn.setLocalDescription(answer);
-    wsSend({ type: 'call_answer', sdp: answer });
-  } catch (err) {
-    console.error('[RTC] Error accepting call:', err);
-    showToast('Call setup failed: ' + err.message, 'error');
-    closeWebRTCCall(true);
-  }
-}
-
-function rejectCall() {
-  hideIncomingCallUI();
-  window._pendingOffer = null;
-  pendingIceCandidates = [];
-  wsSend({ type: 'call_reject' });
-}
-
-async function handleCallAnswer(sdp) {
-  if (!peerConn) return;
-  try {
-    await peerConn.setRemoteDescription(new RTCSessionDescription(sdp));
-    await drainPendingIceCandidates();
-  } catch (err) {
-    console.error('[RTC] Error setting answer remote description:', err);
-    showToast('Call handshake failed: ' + err.message, 'error');
-    closeWebRTCCall(true);
-  }
-}
-
-async function handleIceCandidate(candidate) {
-  if (!candidate) return;
-  if (!peerConn || !peerConn.remoteDescription || !peerConn.remoteDescription.type) {
-    pendingIceCandidates.push(candidate);
-    return;
-  }
-  try {
-    await peerConn.addIceCandidate(new RTCIceCandidate(candidate));
-  } catch (e) {
-    console.warn('[RTC] addIceCandidate error:', e);
-  }
-}
-
-function createPeerConnection() {
-  if (peerConn) {
-    try { peerConn.close(); } catch (_) {}
-  }
-
-  peerConn = new RTCPeerConnection(RTC_CONFIG);
-
-  peerConn.onicecandidate = (e) => {
-    if (e.candidate) {
-      wsSend({
-        type: 'call_ice',
-        candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate
-      });
-    }
-  };
-
-  peerConn.ontrack = (e) => {
-    if (!remoteAudioEl) {
-      remoteAudioEl = document.getElementById('remoteAudio');
-      if (!remoteAudioEl) {
-        remoteAudioEl = document.createElement('audio');
-        remoteAudioEl.id = 'remoteAudio';
-        remoteAudioEl.autoplay = true;
-        remoteAudioEl.playsInline = true;
-        document.body.appendChild(remoteAudioEl);
-      }
-    }
-    if (e.streams && e.streams[0]) {
-      remoteAudioEl.srcObject = e.streams[0];
-    } else {
-      remoteAudioEl.srcObject = new MediaStream([e.track]);
-    }
-    remoteAudioEl.play().catch(err => {
-      console.warn('[RTC] Autoplay waiting for user gesture:', err);
-    });
-  };
-
-  const checkState = () => {
-    if (!peerConn) return;
-    const cState = peerConn.connectionState;
-    const iState = peerConn.iceConnectionState;
-    console.log(`[RTC] connectionState=${cState} iceConnectionState=${iState}`);
-
-    if (cState === 'connected' || iState === 'connected' || iState === 'completed') {
-      clearIceTimeout();
-      if (callTimer === null) {
-        startCallTimer();
-        if (callStatus)    callStatus.textContent = '00:00';
-        if (callStatusDot) callStatusDot.style.background = '#10B981';
-      }
-    } else if (iState === 'checking') {
-      if (callStatus) callStatus.textContent = 'Connecting...';
-    } else if (iState === 'disconnected') {
-      // Transient drop — give ICE 5s to recover before ending
-      if (callStatus) callStatus.textContent = 'Reconnecting...';
-      clearIceTimeout();
-      iceConnectionTimeout = setTimeout(() => {
-        if (peerConn && (peerConn.iceConnectionState === 'disconnected' || peerConn.iceConnectionState === 'failed')) {
-          showToast('Call dropped — network disconnected', 'error');
-          closeWebRTCCall(true);
-        }
-      }, 5000);
-    } else if (cState === 'failed' || iState === 'failed') {
-      clearIceTimeout();
-      console.warn('[RTC] Connection failed. cState:', cState, 'iState:', iState);
-      showToast('Call failed — network or NAT issue. Try again.', 'error');
-      closeWebRTCCall(false);
-    }
-  };
-
-  peerConn.onconnectionstatechange = checkState;
-  peerConn.oniceconnectionstatechange = checkState;
-}
-
-function closeWebRTCCall(sendEndSignal = true) {
-  if (sendEndSignal && isCallActive) {
-    wsSend({ type: 'call_end' });
-  }
-
-  clearIceTimeout();
-  pendingIceCandidates = [];
-  window._pendingOffer = null;
-
-  if (localStream) {
-    localStream.getTracks().forEach(t => t.stop());
-    localStream = null;
-  }
-  if (peerConn) {
-    peerConn.onicecandidate = null;
-    peerConn.ontrack = null;
-    peerConn.onconnectionstatechange = null;
-    peerConn.oniceconnectionstatechange = null;
-    peerConn.close();
-    peerConn = null;
-  }
-  if (remoteAudioEl) {
-    remoteAudioEl.srcObject = null;
-  }
-
-  isCallActive    = false;
-  isCallMinimized = false;
-  isMicMuted      = false;
-  isCaller        = false;
-  clearInterval(callTimer);
-  callTimer   = null;
-  callSeconds = 0;
-
-  if (callModal)          callModal.classList.remove('active');
-  if (minimizedCallBanner) minimizedCallBanner.classList.remove('active');
-  if (voiceCallBtn)       voiceCallBtn.classList.remove('in-call');
-  hideIncomingCallUI();
-}
-
-function openCallModal(statusText) {
-  if (!callModal) return;
-  callName.textContent  = currentPartner.name;
-  callAvatar.src        = currentPartner.avatar;
-  callStatus.textContent = statusText;
-  if (callStatusDot) callStatusDot.style.background = '#F59E0B';
-  callModal.classList.add('active');
-  if (voiceCallBtn) voiceCallBtn.classList.add('in-call');
-  minimizedCallBanner && minimizedCallBanner.classList.remove('active');
-  if (callMicToggleBtn) callMicToggleBtn.classList.remove('active');
-  if (micLabel)         micLabel.textContent = 'Mute';
-  if (callSpeakerBtn)   callSpeakerBtn.classList.remove('active');
-}
-
-function startCallTimer() {
-  clearInterval(callTimer);
-  callSeconds = 0;
-  callTimer = setInterval(() => {
-    callSeconds++;
-    const mins = Math.floor(callSeconds / 60).toString().padStart(2, '0');
-    const secs = (callSeconds % 60).toString().padStart(2, '0');
-    const t = `${mins}:${secs}`;
-    if (callStatus)        callStatus.textContent = t;
-    if (minimizedCallTimer) minimizedCallTimer.textContent = t;
-  }, 1000);
-}
-
-function minimizeCall() {
-  if (!isCallActive) return;
-  isCallMinimized = true;
-  callModal.classList.remove('active');
-  minimizedCallBanner.classList.add('active');
-  if (minimizedCallTimer) minimizedCallTimer.textContent = callStatus.textContent;
-}
-
-function restoreCall() {
-  if (!isCallActive) return;
-  isCallMinimized = false;
-  minimizedCallBanner.classList.remove('active');
-  callModal.classList.add('active');
-}
-
-// ─────────────────────────────────────────────────
-//  Incoming Call UI
-// ─────────────────────────────────────────────────
-function showIncomingCallUI() {
-  if (!incomingCallOverlay) return;
-  if (incomingCallerName)   incomingCallerName.textContent  = currentPartner.name;
-  if (incomingCallerAvatar) incomingCallerAvatar.src        = currentPartner.avatar;
-  incomingCallOverlay.classList.add('active');
-
-  // Auto-reject after 30s if not answered
-  window._incomingCallTimeout = setTimeout(() => {
-    if (incomingCallOverlay.classList.contains('active')) rejectCall();
-  }, 30000);
-}
-
-function hideIncomingCallUI() {
-  clearTimeout(window._incomingCallTimeout);
-  if (incomingCallOverlay) incomingCallOverlay.classList.remove('active');
-}
-
 // ─────────────────────────────────────────────────
 //  Avatar / Presence UI
 // ─────────────────────────────────────────────────
 function applyOpponentProfile(url, name) {
   if (userNameEl)  userNameEl.textContent = name;
-  if (callName)    callName.textContent   = name;
-  if (callAvatar)  callAvatar.src         = url;
   currentPartner.avatar = url;
   currentPartner.name   = name;
 
@@ -1075,8 +667,6 @@ function applyOpponentProfile(url, name) {
     tmp.onerror = () => { avatarImg.style.opacity = '1'; };
     tmp.src = url;
   }
-  if (incomingCallerAvatar) incomingCallerAvatar.src = url;
-  if (incomingCallerName)   incomingCallerName.textContent = name;
 }
 
 // ─────────────────────────────────────────────────
@@ -1203,38 +793,6 @@ function setupEventListeners() {
       }
     });
   }
-
-  // Call button
-  if (voiceCallBtn) {
-    voiceCallBtn.addEventListener('click', () => {
-      showToast('Calling feature is under development', 'info');
-    });
-  }
-
-  // Incoming call accept/reject
-  if (acceptCallBtn) acceptCallBtn.addEventListener('click', acceptCall);
-  if (rejectCallBtn) rejectCallBtn.addEventListener('click', rejectCall);
-
-  // Active call controls
-  if (endCallBtn)       endCallBtn.addEventListener('click',       () => closeWebRTCCall(true));
-  if (callMinimizeBtn)  callMinimizeBtn.addEventListener('click',  minimizeCall);
-  if (callChatBackBtn)  callChatBackBtn.addEventListener('click',  minimizeCall);
-  if (minimizedCallBanner) {
-    minimizedCallBanner.addEventListener('click', (e) => {
-      if (!e.target.closest('#minimizedEndCallBtn')) restoreCall();
-    });
-  }
-  if (minimizedEndCallBtn) minimizedEndCallBtn.addEventListener('click', (e) => { e.stopPropagation(); closeWebRTCCall(true); });
-
-  if (callMicToggleBtn) {
-    callMicToggleBtn.addEventListener('click', () => {
-      isMicMuted = !isMicMuted;
-      callMicToggleBtn.classList.toggle('active', isMicMuted);
-      if (micLabel) micLabel.textContent = isMicMuted ? 'Unmute' : 'Mute';
-      if (localStream) localStream.getAudioTracks().forEach(t => { t.enabled = !isMicMuted; });
-    });
-  }
-  if (callSpeakerBtn) callSpeakerBtn.addEventListener('click', () => callSpeakerBtn.classList.toggle('active'));
 
   // Emoji
   if (emojiBtn) {

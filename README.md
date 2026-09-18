@@ -1,15 +1,13 @@
 # LiveChat — Private 2-User Real-Time Chat
 
-A private real-time chat + WebRTC audio call app for **Jisu** and **Jenu**.
+A private real-time chat application for **Jisu** and **Jenu**.
 
 ## Features
 - 🔐 PIN-protected login (Jisu: `1470`, Jenu: `3690`)
 - 💬 Real-time messaging via WebSocket
-- 🎙️ WebRTC peer-to-peer audio calls
 - ⌨️ Live typing indicators with keypress sounds
 - 📷 Image sharing
 - 🎤 Voice note recording
-- 📞 Minimized call banner with live timer
 - 🔇 Sound mute/unmute toggle
 
 ## Local Development
@@ -33,6 +31,4 @@ Open `http://localhost:8000` in two browser tabs.
 ## Tech Stack
 - **Backend**: Python + FastAPI + WebSockets
 - **Frontend**: Vanilla HTML/CSS/JS
-- **Calls**: WebRTC (peer-to-peer audio)
-- **Signaling**: WebSocket relay via server
 - **Deploy**: Render (free tier)
