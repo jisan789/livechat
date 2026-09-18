@@ -1272,3 +1272,148 @@ body {
   }
 }
 
+/* ══════════════════════════════════════════════════
+   3D SCREEN KISS FROM INSIDE THE PHONE
+   ══════════════════════════════════════════════════ */
+.screen-kiss-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen-kiss-wrapper {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  perspective: 700px;
+  will-change: transform, opacity, filter;
+  animation: kissFromDeep 2.7s cubic-bezier(0.18, 0.89, 0.32, 1.25) forwards;
+}
+
+.kiss-lip-mark {
+  font-size: 118px;
+  line-height: 1;
+  display: inline-block;
+  user-select: none;
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  filter: drop-shadow(0 0 24px rgba(244, 63, 94, 0.7)) drop-shadow(0 0 55px rgba(225, 29, 72, 0.45));
+  transform-origin: center center;
+}
+
+/* Glass condensation breath fog around the kiss */
+.kiss-glass-condensation {
+  position: absolute;
+  width: 190px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.65) 0%, rgba(251, 113, 133, 0.3) 48%, rgba(244, 63, 94, 0) 75%);
+  filter: blur(12px);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.6);
+  animation: glassCondensationFog 2.7s ease-out forwards;
+}
+
+/* Soft glass ripple ring when lips touch screen */
+.kiss-glass-ripple {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  border: 2px solid rgba(251, 113, 133, 0.7);
+  box-shadow: 0 0 24px rgba(244, 63, 94, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  animation: kissGlassRipple 1.1s ease-out 0.42s forwards;
+}
+
+/* 3D Flight from the deep screen inside -> Press against glass -> Linger -> Evaporate */
+@keyframes kissFromDeep {
+  0% {
+    opacity: 0;
+    filter: blur(18px);
+    transform: scale(0.1) translateZ(-450px) rotate(-16deg);
+  }
+  28% {
+    opacity: 0.8;
+    filter: blur(6px);
+    transform: scale(0.7) translateZ(-160px) rotate(-8deg);
+  }
+  43% {
+    /* Lips press directly on inside of screen glass! */
+    opacity: 1;
+    filter: blur(0px);
+    transform: scale(1.52) scaleY(1.32) translateZ(0) rotate(2deg);
+  }
+  48% {
+    /* Glass rebound settling */
+    opacity: 1;
+    filter: blur(0.2px);
+    transform: scale(1.38) scaleY(1.38) rotate(-1deg);
+  }
+  75% {
+    /* Lingering on screen glass like a warm lipstick mark */
+    opacity: 0.95;
+    filter: blur(0.5px);
+    transform: scale(1.36) rotate(-1deg);
+  }
+  100% {
+    /* Softly melts and evaporates like warm breath on cold glass */
+    opacity: 0;
+    filter: blur(12px);
+    transform: scale(1.2) translateY(16px) rotate(3deg);
+  }
+}
+
+@keyframes glassCondensationFog {
+  0%, 36% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  43% {
+    opacity: 0.9;
+    transform: scale(1.38);
+  }
+  70% {
+    opacity: 0.75;
+    transform: scale(1.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
+}
+
+@keyframes kissGlassRipple {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.5);
+  }
+}
+
+/* Screen glass micro-tremble on impact */
+.chat-app.kiss-impact-shake {
+  animation: screenKissGlassShake 0.3s ease-out;
+}
+
+@keyframes screenKissGlassShake {
+  0% { transform: translateY(0); }
+  25% { transform: translateY(-2.5px) scale(1.003); }
+  50% { transform: translateY(1.8px) scale(0.998); }
+  75% { transform: translateY(-0.8px); }
+  100% { transform: translateY(0); }
+}
+
+
