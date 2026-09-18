@@ -433,11 +433,7 @@ function handleWsMessage(msg) {
     // ── Flying Balloon Emoji Reaction ─────────────
     case 'flying_emoji':
       createFlyingBalloon(msg.emoji);
-      if (msg.emoji === '💋' || msg.emoji === '😘') {
-        triggerScreenKissAnimation(msg.emoji);
-      } else {
-        playOpponentKeypressSound();
-      }
+      playOpponentKeypressSound();
       break;
   }
 }
@@ -650,11 +646,6 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
     return;
   }
 
-  // Trigger 3D screen kiss if text contains kiss emoji
-  if (text && (text.includes('💋') || text.includes('😘'))) {
-    triggerScreenKissAnimation('💋');
-  }
-
   // If the message was already being typed live, finalize that exact bubble!
   if (currentLiveIncomingRow) {
     resetWaveStream();
@@ -693,12 +684,6 @@ function handleSend() {
 
   const clientTime = formatCurrentTime();
   appendMessage(text, 'outgoing', clientTime);
-
-  // Trigger 3D screen kiss if outgoing message contains kiss emoji
-  if (text.includes('💋') || text.includes('😘')) {
-    triggerScreenKissAnimation('💋');
-  }
-
   chatInput.value = '';
   lastLocalTextLength = 0;
   chatInput.dispatchEvent(new Event('input'));
@@ -1683,12 +1668,8 @@ function sendFlyingEmojiBalloon(emojiChar) {
   // 1. Instantly trigger floating balloons on own chat inbox
   createFlyingBalloon(emojiChar);
 
-  // 2. Play subtle tap sound or dramatic 3D screen kiss from inside
-  if (emojiChar === '💋' || emojiChar === '😘') {
-    triggerScreenKissAnimation(emojiChar);
-  } else {
-    playKeypressSound();
-  }
+  // 2. Play subtle tap sound
+  playKeypressSound();
 
   // 3. Broadcast to opponent via live WebSocket (zero server delay)
   wsSend({
@@ -1701,144 +1682,4 @@ function sendFlyingEmojiBalloon(emojiChar) {
   setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
   setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
 }
-
-// ─────────────────────────────────────────────────
-//  3D Screen Kiss from Inside Phone
-// ─────────────────────────────────────────────────
-let screenKissContainer = null;
-let lastKissTime = 0;
-
-function getScreenKissContainer() {
-  if (!screenKissContainer || !document.body.contains(screenKissContainer)) {
-    screenKissContainer = document.getElementById('screenKissContainer');
-    if (!screenKissContainer) {
-      screenKissContainer = document.createElement('div');
-      screenKissContainer.id = 'screenKissContainer';
-      screenKissContainer.className = 'screen-kiss-container';
-      (chatApp || document.body).appendChild(screenKissContainer);
-    }
-  }
-  return screenKissContainer;
-}
-
-function playKissSound() {
-  if (!soundEnabled) return;
-  const ctx = getAudioContext();
-  if (!ctx) return;
-
-  try {
-    const t0 = ctx.currentTime;
-
-    // Resonant bandpass filter for tender lip formant
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(880, t0);
-    filter.Q.setValueAtTime(3.0, t0);
-
-    // Suction pop oscillator: pitch slides dynamically like a real kiss
-    const osc = ctx.createOscillator();
-    const oscGain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(360, t0);
-    osc.frequency.exponentialRampToValueAtTime(840, t0 + 0.04);
-    osc.frequency.exponentialRampToValueAtTime(220, t0 + 0.16);
-
-    oscGain.gain.setValueAtTime(0.001, t0);
-    oscGain.gain.exponentialRampToValueAtTime(0.35, t0 + 0.035);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.17);
-
-    osc.connect(filter);
-    filter.connect(oscGain);
-    oscGain.connect(ctx.destination);
-
-    osc.start(t0);
-    osc.stop(t0 + 0.2);
-
-    // Warm breath puff against the inside glass
-    const breathBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.22), ctx.sampleRate);
-    const channelData = breathBuffer.getChannelData(0);
-    for (let i = 0; i < breathBuffer.length; i++) {
-      channelData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.07));
-    }
-    const breathSrc = ctx.createBufferSource();
-    breathSrc.buffer = breathBuffer;
-
-    const breathFilter = ctx.createBiquadFilter();
-    breathFilter.type = 'lowpass';
-    breathFilter.frequency.setValueAtTime(1200, t0);
-
-    const breathGain = ctx.createGain();
-    breathGain.gain.setValueAtTime(0.001, t0);
-    breathGain.gain.linearRampToValueAtTime(0.12, t0 + 0.05);
-    breathGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
-
-    breathSrc.connect(breathFilter);
-    breathFilter.connect(breathGain);
-    breathGain.connect(ctx.destination);
-
-    breathSrc.start(t0);
-  } catch (_) { /* audio error ignored */ }
-}
-
-function triggerScreenKissAnimation(emojiChar = '💋') {
-  const container = getScreenKissContainer();
-  if (!container) return;
-
-  const now = Date.now();
-  // Throttle rapid overlapping spam slightly (minimum 120ms between spawns)
-  if (now - lastKissTime < 120) return;
-  lastKissTime = now;
-
-  const kissWrapper = document.createElement('div');
-  kissWrapper.className = 'screen-kiss-wrapper';
-
-  // Natural organic jitter so subsequent kisses feel alive and unique
-  const jitterX = Math.floor(Math.random() * 60 - 30); // -30px to +30px
-  const jitterY = Math.floor(Math.random() * 70 - 35); // -35px to +35px
-  const tilt = (Math.random() * 14 - 7).toFixed(1);     // -7deg to +7deg
-
-  kissWrapper.style.transformOrigin = 'center center';
-  kissWrapper.style.marginLeft = `${jitterX}px`;
-  kissWrapper.style.marginTop = `${jitterY}px`;
-
-  // Condensation mist, impact ripple shockwave, and the luscious lip mark
-  kissWrapper.innerHTML = `
-    <div class="kiss-glass-condensation"></div>
-    <div class="kiss-glass-ripple"></div>
-    <span class="kiss-lip-mark" style="transform: rotate(${tilt}deg);">${emojiChar}</span>
-  `;
-
-  container.appendChild(kissWrapper);
-
-  // Impact timing: at 440ms, the lips press directly against the inside screen glass
-  setTimeout(() => {
-    // 1. Play synthesized suction kiss audio
-    playKissSound();
-
-    // 2. Physical glass bump haptic pulse on mobile devices
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try {
-        navigator.vibrate([35, 20, 65]);
-      } catch (_) {}
-    }
-
-    // 3. Screen glass micro-shake simulation
-    if (chatApp) {
-      chatApp.classList.remove('kiss-impact-shake');
-      void chatApp.offsetWidth; // force reflow
-      chatApp.classList.add('kiss-impact-shake');
-      setTimeout(() => {
-        chatApp.classList.remove('kiss-impact-shake');
-      }, 350);
-    }
-  }, 440);
-
-  // Clean up element after full flight + lingering + condensation dissipation (2.8s)
-  setTimeout(() => {
-    if (kissWrapper.parentNode) {
-      kissWrapper.remove();
-    }
-  }, 2900);
-}
-
 
