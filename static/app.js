@@ -407,7 +407,7 @@ function handleWsMessage(msg) {
 
     // ── Voice note (Live WebSocket) ───────────────
     case 'voice':
-      receiveIncomingVoice(msg.audio, msg.duration, msg.time, msg.id);
+      receiveIncomingVoice(msg.audio, msg.duration, msg.time, msg.id, msg.waveform);
       break;
 
     // ── Chat cleared ──────────────────────────────
@@ -674,10 +674,15 @@ const MIC_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none
 
 const SEND_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
 
+// Speech-pattern natural waveform (32 bars)
+const DEFAULT_SPEECH_WAVEFORM = [
+  6, 10, 16, 22, 14, 8, 12, 20, 26, 18, 12, 16, 24, 28, 20, 14, 18, 22, 26, 16, 10, 14, 22, 18, 12, 16, 20, 14, 8, 12, 16, 10
+];
+
 let currentlyPlayingVoiceAudio = null;
 let currentlyPlayingVoiceReset = null;
 
-function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = null, messageId = null) {
+function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = null, messageId = null, customWaveform = null) {
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
     return;
   }
@@ -696,9 +701,12 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
 
-  // 16 waveform bars with natural speech frequencies
-  const barHeights = [8, 14, 22, 12, 18, 24, 16, 10, 20, 15, 22, 11, 19, 14, 8, 12];
-  const barsHtml = barHeights.map(h => `<span class="waveform-bar" style="height:${h}px;"></span>`).join('');
+  // Build 32 waveform bars (from custom mic samples or realistic speech contour)
+  let barHeights = DEFAULT_SPEECH_WAVEFORM;
+  if (Array.isArray(customWaveform) && customWaveform.length >= 8) {
+    barHeights = customWaveform;
+  }
+  const barsHtml = barHeights.map(h => `<span class="waveform-bar" style="height:${Math.max(4, Math.min(26, h))}px;"></span>`).join('');
 
   bubble.innerHTML = `
     <div class="voice-bubble">
@@ -711,7 +719,7 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
           <rect x="14" y="4" width="4" height="16"></rect>
         </svg>
       </button>
-      <div class="voice-waveform">${barsHtml}</div>
+      <div class="voice-waveform" title="Click to seek">${barsHtml}</div>
       <span class="voice-duration">${durationText}</span>
     </div>`;
 
@@ -726,12 +734,13 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
   chatMessages.insertBefore(messageRow, typingIndicator);
   scrollToBottom();
 
-  const voiceBubble  = bubble.querySelector('.voice-bubble');
-  const playBtn      = bubble.querySelector('.voice-play-btn');
-  const playIcon     = bubble.querySelector('.play-icon');
-  const pauseIcon    = bubble.querySelector('.pause-icon');
-  const durationEl   = bubble.querySelector('.voice-duration');
-  const waveformBars = bubble.querySelectorAll('.waveform-bar');
+  const voiceBubble        = bubble.querySelector('.voice-bubble');
+  const playBtn            = bubble.querySelector('.voice-play-btn');
+  const playIcon           = bubble.querySelector('.play-icon');
+  const pauseIcon          = bubble.querySelector('.pause-icon');
+  const durationEl         = bubble.querySelector('.voice-duration');
+  const waveformContainer  = bubble.querySelector('.voice-waveform');
+  const waveformBars       = bubble.querySelectorAll('.waveform-bar');
 
   let audio = null;
   if (audioData) {
@@ -781,6 +790,27 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
     });
   }
 
+  // Interactive Click-to-Seek on waveform
+  waveformContainer.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!audio) return;
+    const rect = waveformContainer.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const progress = Math.max(0, Math.min(1, clickX / rect.width));
+    const dur = audio.duration && !isNaN(audio.duration) ? audio.duration : durationSec;
+    audio.currentTime = progress * dur;
+    durationEl.textContent = formatDuration(Math.floor(audio.currentTime));
+
+    const activeBarCount = Math.floor(progress * waveformBars.length);
+    waveformBars.forEach((bar, idx) => {
+      bar.classList.toggle('played', idx <= activeBarCount);
+    });
+
+    if (audio.paused) {
+      playBtn.click();
+    }
+  });
+
   playBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!audio) {
@@ -815,7 +845,7 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
   });
 }
 
-function receiveIncomingVoice(audioData, duration, timeStr, messageId = null) {
+function receiveIncomingVoice(audioData, duration, timeStr, messageId = null, waveform = null) {
   hideOpponentTyping();
 
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
@@ -823,7 +853,7 @@ function receiveIncomingVoice(audioData, duration, timeStr, messageId = null) {
   }
 
   playOpponentKeypressSound();
-  appendVoiceMessage(audioData, duration, 'incoming', timeStr, messageId);
+  appendVoiceMessage(audioData, duration, 'incoming', timeStr, messageId, waveform);
 }
 
 // ─────────────────────────────────────────────────
@@ -836,6 +866,94 @@ let recordingInterval = null;
 let recordingSeconds = 0;
 let isRecording = false;
 let isRecordCancelled = false;
+
+// Real-time audio analyser for microphone volume reactivity
+let micAnalyser = null;
+let micSource = null;
+let micAnimFrame = null;
+let recordedWaveformSamples = [];
+
+function startLiveMicVisualizer(stream) {
+  recordedWaveformSamples = [];
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    micSource = ctx.createMediaStreamSource(stream);
+    micAnalyser = ctx.createAnalyser();
+    micAnalyser.fftSize = 64;
+    micAnalyser.smoothingTimeConstant = 0.65;
+    micSource.connect(micAnalyser);
+
+    const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+    const liveSpans = document.querySelectorAll('.recording-live-waveform span');
+
+    function drawWave() {
+      if (!isRecording) return;
+      micAnalyser.getByteFrequencyData(dataArray);
+
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length;
+
+      // Sample volume periodically for natural chat bubble waveform contour
+      if (Math.random() < 0.25) {
+        const normH = Math.round(5 + (avg / 128) * 20);
+        recordedWaveformSamples.push(normH);
+      }
+
+      if (liveSpans.length > 0) {
+        liveSpans.forEach((span, i) => {
+          const bin = Math.min(dataArray.length - 1, i * 2);
+          const val = dataArray[bin] || avg;
+          const h = Math.max(4, Math.min(22, (val / 255) * 22));
+          span.style.height = `${h}px`;
+        });
+      }
+
+      micAnimFrame = requestAnimationFrame(drawWave);
+    }
+
+    micAnimFrame = requestAnimationFrame(drawWave);
+  } catch (err) {
+    console.warn('[Visualizer] Mic visualizer init error:', err);
+  }
+}
+
+function stopLiveMicVisualizer() {
+  if (micAnimFrame) {
+    cancelAnimationFrame(micAnimFrame);
+    micAnimFrame = null;
+  }
+  if (micSource) {
+    try { micSource.disconnect(); } catch (_) {}
+    micSource = null;
+  }
+  if (micAnalyser) {
+    try { micAnalyser.disconnect(); } catch (_) {}
+    micAnalyser = null;
+  }
+  const liveSpans = document.querySelectorAll('.recording-live-waveform span');
+  liveSpans.forEach(span => { span.style.height = ''; });
+}
+
+function getRecordedWaveformContour() {
+  const targetCount = 32;
+  if (recordedWaveformSamples.length >= 8) {
+    const res = [];
+    const step = recordedWaveformSamples.length / targetCount;
+    for (let i = 0; i < targetCount; i++) {
+      const idx = Math.min(recordedWaveformSamples.length - 1, Math.floor(i * step));
+      res.push(Math.max(5, Math.min(26, recordedWaveformSamples[idx])));
+    }
+    return res;
+  }
+  return DEFAULT_SPEECH_WAVEFORM;
+}
 
 function getSupportedAudioMimeType() {
   const types = [
@@ -899,6 +1017,8 @@ async function startVoiceRecording() {
   };
 
   mediaRecorder.onstop = () => {
+    stopLiveMicVisualizer();
+
     if (recordStream) {
       recordStream.getTracks().forEach(t => t.stop());
       recordStream = null;
@@ -918,19 +1038,21 @@ async function startVoiceRecording() {
     audioChunks = [];
 
     const finalDuration = Math.max(1, recordingSeconds);
+    const waveformContour = getRecordedWaveformContour();
 
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64Audio = reader.result;
       const clientTime = formatCurrentTime();
 
-      appendVoiceMessage(base64Audio, finalDuration, 'outgoing', clientTime);
+      appendVoiceMessage(base64Audio, finalDuration, 'outgoing', clientTime, null, waveformContour);
 
       // Sent purely via live WebSocket with zero external PHP server storage
       wsSend({
         type: 'voice',
         audio: base64Audio,
         duration: finalDuration,
+        waveform: waveformContour,
         time: clientTime
       });
     };
@@ -938,6 +1060,9 @@ async function startVoiceRecording() {
   };
 
   mediaRecorder.start(200);
+
+  // Start real-time audio visualizer on recording bars
+  startLiveMicVisualizer(recordStream);
 
   if (recordingTimer) recordingTimer.textContent = '0:00';
   if (inputNormalContent) inputNormalContent.style.display = 'none';
@@ -960,6 +1085,7 @@ function stopAndSendVoiceRecording() {
   isRecording = false;
   isRecordCancelled = false;
 
+  stopLiveMicVisualizer();
   resetRecordingUI();
 
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -973,6 +1099,7 @@ function cancelVoiceRecording() {
   isRecording = false;
   isRecordCancelled = true;
 
+  stopLiveMicVisualizer();
   resetRecordingUI();
 
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
