@@ -462,6 +462,21 @@ function setPresenceOffline() {
 let currentLiveIncomingRow = null;
 let lastOpponentTextLength = 0;
 
+function renderSmoothLiveText(textNode, newText, oldLength) {
+  if (!textNode) return;
+  if (newText.length <= oldLength || oldLength === 0) {
+    textNode.textContent = newText;
+    return;
+  }
+  const settled = newText.slice(0, oldLength);
+  const fresh = newText.slice(oldLength);
+  textNode.textContent = settled;
+  const freshSpan = document.createElement('span');
+  freshSpan.className = 'char-fresh';
+  freshSpan.textContent = fresh;
+  textNode.appendChild(freshSpan);
+}
+
 function handleOpponentLiveTyping(text) {
   clearTimeout(opponentTypingTimer);
 
@@ -485,10 +500,10 @@ function handleOpponentLiveTyping(text) {
     typingIndicator.classList.remove('active');
   }
 
-  // Create standard incoming bubble if it does not exist yet
+  // Create tranquil incoming bubble if it does not exist yet
   if (!currentLiveIncomingRow) {
     currentLiveIncomingRow = document.createElement('div');
-    currentLiveIncomingRow.className = 'message-row incoming';
+    currentLiveIncomingRow.className = 'message-row incoming live-typing-row';
 
     const bubbleGroup = document.createElement('div');
     bubbleGroup.className = 'bubble-group';
@@ -507,17 +522,23 @@ function handleOpponentLiveTyping(text) {
     bubbleGroup.appendChild(bubble);
     currentLiveIncomingRow.appendChild(bubbleGroup);
 
+    // Peaceful live typing cue
+    const hintEl = document.createElement('div');
+    hintEl.className = 'message-time live-typing-hint';
+    hintEl.innerHTML = '<span class="live-dot-pulse"></span><span>typing live</span>';
+    currentLiveIncomingRow.appendChild(hintEl);
+
     chatMessages.insertBefore(currentLiveIncomingRow, typingIndicator);
   }
 
   const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
   if (textNode) {
-    textNode.textContent = text;
+    renderSmoothLiveText(textNode, text, lastOpponentTextLength);
   }
 
-  // Play subtle keypress sound as characters are typed by opponent
+  // Play peaceful keypress whisper sound as characters are typed by opponent
   if (text.length !== lastOpponentTextLength) {
-    playKeypressSound();
+    playOpponentLiveSound();
   }
   lastOpponentTextLength = text.length;
 
@@ -584,15 +605,21 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
     const bubble = currentLiveIncomingRow.querySelector('.bubble');
     const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
     const cursorNode = currentLiveIncomingRow.querySelector('.streaming-cursor');
+    const hintEl = currentLiveIncomingRow.querySelector('.live-typing-hint');
 
     if (textNode) textNode.textContent = text;
     if (cursorNode) cursorNode.remove();
     if (bubble) bubble.classList.remove('live-typing-bubble');
 
-    const timeEl = document.createElement('div');
-    timeEl.className = 'message-time';
-    timeEl.textContent = timeStr || formatCurrentTime();
-    currentLiveIncomingRow.appendChild(timeEl);
+    if (hintEl) {
+      hintEl.className = 'message-time';
+      hintEl.textContent = timeStr || formatCurrentTime();
+    } else {
+      const timeEl = document.createElement('div');
+      timeEl.className = 'message-time';
+      timeEl.textContent = timeStr || formatCurrentTime();
+      currentLiveIncomingRow.appendChild(timeEl);
+    }
 
     if (messageId) {
       currentLiveIncomingRow.dataset.msgId = messageId;
@@ -1476,6 +1503,31 @@ function playKeypressSound() {
 }
 
 const playOpponentKeypressSound = playKeypressSound;
+
+function playOpponentLiveSound() {
+  if (!soundEnabled) return;
+  const ctx = getAudioContext();
+  let idx = Math.floor(Math.random() * SOUND_FILES.length);
+  if (idx === lastSoundIndex) idx = (idx + 1) % SOUND_FILES.length;
+  lastSoundIndex = idx;
+
+  if (ctx && audioBuffersLoaded && KEYPRESS_AUDIO_BUFFERS[idx]) {
+    try {
+      const src  = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      src.buffer = KEYPRESS_AUDIO_BUFFERS[idx];
+      // Ultra-gentle, peaceful whisper gain (0.11) for tranquil opponent typing ambiance
+      gain.gain.value = 0.11 * (0.95 + Math.random() * 0.1);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(0);
+    } catch (_) { /* ignore */ }
+  } else if (fallbackAudio && fallbackAudio[idx]) {
+    const clone = fallbackAudio[idx].cloneNode();
+    clone.volume = 0.11;
+    clone.play().catch(() => {});
+  }
+}
 
 // ─────────────────────────────────────────────────
 //  Utility
