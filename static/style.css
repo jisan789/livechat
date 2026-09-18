@@ -29,6 +29,7 @@ html, body {
   overflow: hidden;
   position: fixed;
   overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 body {
@@ -327,6 +328,7 @@ body {
   flex-direction: column;
   max-width: 82%;
   animation: messageSlide 0.22s ease-out forwards;
+  touch-action: manipulation;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
@@ -367,6 +369,7 @@ body {
   flex-direction: column;
   gap: 3px;
   width: 100%;
+  touch-action: manipulation;
 }
 
 .bubble {
@@ -380,7 +383,7 @@ body {
   font-weight: 500;
   word-break: break-word;
   position: relative;
-  touch-action: pan-y;
+  touch-action: manipulation;
   transition: margin-bottom 0.18s ease;
   -webkit-user-select: none;
   -moz-user-select: none;

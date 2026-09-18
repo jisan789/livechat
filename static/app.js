@@ -753,11 +753,23 @@ function scrollToBottom() {
 // ─────────────────────────────────────────────────
 //  Input Focus Preservation Helper
 // ─────────────────────────────────────────────────
+let shouldKeepInputFocused = false;
+let keepFocusTimer = null;
+
+function markMessageInteraction() {
+  shouldKeepInputFocused = true;
+  clearTimeout(keepFocusTimer);
+  keepFocusTimer = setTimeout(() => {
+    shouldKeepInputFocused = false;
+  }, 600);
+}
+
 function keepInputFocused() {
+  markMessageInteraction();
   if (chatInput) {
     chatInput.focus({ preventScroll: true });
-    setTimeout(() => { if (chatInput) chatInput.focus({ preventScroll: true }); }, 10);
-    setTimeout(() => { if (chatInput) chatInput.focus({ preventScroll: true }); }, 50);
+    setTimeout(() => { if (chatInput && shouldKeepInputFocused) chatInput.focus({ preventScroll: true }); }, 10);
+    setTimeout(() => { if (chatInput && shouldKeepInputFocused) chatInput.focus({ preventScroll: true }); }, 50);
   }
 }
 
@@ -769,40 +781,34 @@ function attachDoubleTapReaction(bubble, messageRow) {
 
   let lastTapTime = 0;
   let lastTapPos = { x: 0, y: 0 };
+  let lastReactTime = 0;
 
-  // 1. Prevent desktop double-click text selection while preserving keyboard focus
-  bubble.addEventListener('mousedown', (e) => {
-    if (e.detail > 1 || document.activeElement === chatInput) {
-      e.preventDefault();
-      if (document.activeElement === chatInput) keepInputFocused();
-    }
-  });
-
-  bubble.addEventListener('pointerdown', (e) => {
-    if (e.detail > 1 || document.activeElement === chatInput) {
-      e.preventDefault();
-      if (document.activeElement === chatInput) keepInputFocused();
-    }
-  });
-
-  // 2. Intercept double-tap on touchstart while keeping keyboard focused
-  bubble.addEventListener('touchstart', (e) => {
-    if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
-      return;
-    }
-    const touch = e.touches[0];
-    const now = Date.now();
-    const timeDiff = now - lastTapTime;
-    const dist = touch ? Math.hypot(touch.clientX - lastTapPos.x, touch.clientY - lastTapPos.y) : 0;
-
-    // If input is focused, make sure it stays focused so virtual keyboard never closes
+  const handlePointerOrMouse = (e) => {
+    markMessageInteraction();
     if (document.activeElement === chatInput) {
+      if (!e.target.closest('.voice-play-btn')) {
+        e.preventDefault();
+      }
       keepInputFocused();
     }
+  };
 
-    if (timeDiff > 0 && timeDiff < 350 && dist < 40) {
-      e.preventDefault();
+  // 1. Prevent desktop & mobile focus loss on pointerdown / mousedown
+  bubble.addEventListener('pointerdown', handlePointerOrMouse);
+  bubble.addEventListener('mousedown', handlePointerOrMouse);
+
+  // 2. Double-tap detection without cancelling touchstart (passive: true)
+  function handleDoubleTapGesture(e, clientX, clientY) {
+    markMessageInteraction();
+    const now = Date.now();
+    if (now - lastReactTime < 450) return; // Debounce rapid multi-triggers
+
+    const timeDiff = now - lastTapTime;
+    const dist = Math.hypot(clientX - lastTapPos.x, clientY - lastTapPos.y);
+
+    if (timeDiff > 0 && timeDiff < 380 && dist < 45) {
       lastTapTime = 0;
+      lastReactTime = now;
 
       if (window.getSelection) {
         window.getSelection().removeAllRanges();
@@ -812,17 +818,31 @@ function attachDoubleTapReaction(bubble, messageRow) {
       triggerLoveReact(messageRow, true);
     } else {
       lastTapTime = now;
-      if (touch) {
-        lastTapPos = { x: touch.clientX, y: touch.clientY };
-      }
+      lastTapPos = { x: clientX, y: clientY };
     }
-  }, { passive: false });
+  }
+
+  // Intercept on touchstart with passive: true so browser never cancels gesture
+  bubble.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
+      return;
+    }
+    markMessageInteraction();
+    if (document.activeElement === chatInput) {
+      keepInputFocused();
+    }
+    const touch = e.touches[0];
+    if (touch) {
+      handleDoubleTapGesture(e, touch.clientX, touch.clientY);
+    }
+  }, { passive: true });
 
   // 3. Desktop dblclick handling
   bubble.addEventListener('dblclick', (e) => {
     if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
       return;
     }
+    markMessageInteraction();
     e.preventDefault();
     if (window.getSelection) {
       window.getSelection().removeAllRanges();
@@ -852,19 +872,26 @@ function triggerLoveReact(messageRow, isLocal = true) {
     badge.setAttribute('aria-label', 'Love reaction');
 
     const handleRemove = (e) => {
+      markMessageInteraction();
       e.stopPropagation();
       e.preventDefault();
       removeLoveReact(messageRow, true);
       keepInputFocused();
     };
     badge.addEventListener('pointerdown', (e) => {
+      markMessageInteraction();
       e.preventDefault();
       keepInputFocused();
     });
     badge.addEventListener('mousedown', (e) => {
+      markMessageInteraction();
       e.preventDefault();
       keepInputFocused();
     });
+    badge.addEventListener('touchstart', (e) => {
+      markMessageInteraction();
+      keepInputFocused();
+    }, { passive: true });
     badge.addEventListener('click', handleRemove);
     badge.addEventListener('touchend', handleRemove);
 
@@ -1460,9 +1487,11 @@ function setupEventListeners() {
         e.target.closest('#emojiBtn') ||
         e.target.closest('.floating-balloons-container')
       ) {
+        markMessageInteraction();
         return;
       }
       // Only close keyboard when tapping genuine blank empty background space
+      shouldKeepInputFocused = false;
       if (document.activeElement === chatInput) {
         chatInput.blur();
       }
@@ -1473,22 +1502,37 @@ function setupEventListeners() {
 
     // Prevent message row interactions from stealing focus from chatInput
     chatMessages.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.message-row') && document.activeElement === chatInput) {
-        if (!e.target.closest('.voice-play-btn')) {
-          e.preventDefault();
+      if (e.target.closest('.message-row')) {
+        markMessageInteraction();
+        if (document.activeElement === chatInput) {
+          if (!e.target.closest('.voice-play-btn')) {
+            e.preventDefault();
+          }
+          keepInputFocused();
         }
-        keepInputFocused();
       }
     });
 
     chatMessages.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.message-row') && document.activeElement === chatInput) {
-        if (!e.target.closest('.voice-play-btn')) {
-          e.preventDefault();
+      if (e.target.closest('.message-row')) {
+        markMessageInteraction();
+        if (document.activeElement === chatInput) {
+          if (!e.target.closest('.voice-play-btn')) {
+            e.preventDefault();
+          }
+          keepInputFocused();
         }
-        keepInputFocused();
       }
     });
+
+    chatMessages.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.message-row')) {
+        markMessageInteraction();
+        if (document.activeElement === chatInput) {
+          keepInputFocused();
+        }
+      }
+    }, { passive: true });
   }
   // Sound toggle
   if (soundToggleBtn) {
@@ -1541,6 +1585,7 @@ function setupEventListeners() {
 
   // Helper to send message while keeping focus on input (keeps mobile keyboard open)
   function executeSend() {
+    markMessageInteraction();
     if (chatInput.value.trim()) {
       handleSend();
       chatInput.focus({ preventScroll: true });
@@ -1560,14 +1605,17 @@ function setupEventListeners() {
   let lastTouchActionTime = 0;
 
   actionBtn.addEventListener('pointerdown', (e) => {
+    markMessageInteraction();
     e.preventDefault();
   });
 
   actionBtn.addEventListener('mousedown', (e) => {
+    markMessageInteraction();
     e.preventDefault();
   });
 
   function handleActionBtnTrigger() {
+    markMessageInteraction();
     if (isRecording) {
       stopAndSendVoiceRecording();
     } else if (chatInput.value.trim()) {
@@ -1581,12 +1629,14 @@ function setupEventListeners() {
   }
 
   actionBtn.addEventListener('touchstart', (e) => {
+    markMessageInteraction();
     e.preventDefault();
     lastTouchActionTime = Date.now();
     handleActionBtnTrigger();
   }, { passive: false });
 
   actionBtn.addEventListener('click', (e) => {
+    markMessageInteraction();
     if (Date.now() - lastTouchActionTime < 500) {
       return; // Already handled by touchstart
     }
@@ -1595,9 +1645,16 @@ function setupEventListeners() {
 
   // Cancel voice recording
   if (cancelRecordBtn) {
-    cancelRecordBtn.addEventListener('pointerdown', (e) => e.preventDefault());
-    cancelRecordBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    cancelRecordBtn.addEventListener('pointerdown', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    });
+    cancelRecordBtn.addEventListener('mousedown', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    });
     cancelRecordBtn.addEventListener('touchstart', (e) => {
+      markMessageInteraction();
       e.preventDefault();
       e.stopPropagation();
       cancelVoiceRecording();
@@ -1605,6 +1662,7 @@ function setupEventListeners() {
     }, { passive: false });
 
     cancelRecordBtn.addEventListener('click', (e) => {
+      markMessageInteraction();
       e.stopPropagation();
       cancelVoiceRecording();
       chatInput.focus({ preventScroll: true });
@@ -1635,15 +1693,23 @@ function setupEventListeners() {
   }
 
   if (emojiBtn) {
-    emojiBtn.addEventListener('pointerdown', (e) => e.preventDefault());
-    emojiBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    emojiBtn.addEventListener('pointerdown', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    });
+    emojiBtn.addEventListener('mousedown', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    });
     emojiBtn.addEventListener('touchstart', (e) => {
+      markMessageInteraction();
       e.preventDefault();
       emojiPopover.classList.toggle('show');
       chatInput.focus({ preventScroll: true });
     }, { passive: false });
 
     emojiBtn.addEventListener('click', (e) => {
+      markMessageInteraction();
       e.stopPropagation();
       emojiPopover.classList.toggle('show');
       chatInput.focus({ preventScroll: true });
@@ -1651,19 +1717,36 @@ function setupEventListeners() {
   }
 
   if (emojiPopover) {
-    emojiPopover.addEventListener('pointerdown', (e) => e.preventDefault());
-    emojiPopover.addEventListener('mousedown', (e) => e.preventDefault());
-    emojiPopover.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    emojiPopover.addEventListener('pointerdown', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    });
+    emojiPopover.addEventListener('mousedown', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    });
+    emojiPopover.addEventListener('touchstart', (e) => {
+      markMessageInteraction();
+      e.preventDefault();
+    }, { passive: false });
 
     document.querySelectorAll('.emoji-btn').forEach(btn => {
-      btn.addEventListener('pointerdown', (e) => e.preventDefault());
-      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('pointerdown', (e) => {
+        markMessageInteraction();
+        e.preventDefault();
+      });
+      btn.addEventListener('mousedown', (e) => {
+        markMessageInteraction();
+        e.preventDefault();
+      });
       btn.addEventListener('touchstart', (e) => {
+        markMessageInteraction();
         e.preventDefault();
         sendFlyingEmojiBalloon(btn.textContent.trim());
       }, { passive: false });
 
       btn.addEventListener('click', (e) => {
+        markMessageInteraction();
         e.preventDefault();
         sendFlyingEmojiBalloon(btn.textContent.trim());
       });
@@ -1699,7 +1782,13 @@ function setupKeyboardUIHandling() {
     inputPill.classList.add('focused');
     setTimeout(scrollToBottom, 250);
   });
-  chatInput.addEventListener('blur', () => inputPill.classList.remove('focused'));
+  chatInput.addEventListener('blur', () => {
+    if (shouldKeepInputFocused) {
+      chatInput.focus({ preventScroll: true });
+      return;
+    }
+    inputPill.classList.remove('focused');
+  });
 }
 
 // ─────────────────────────────────────────────────
