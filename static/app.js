@@ -464,17 +464,38 @@ let lastOpponentTextLength = 0;
 
 function renderSmoothLiveText(textNode, newText, oldLength) {
   if (!textNode) return;
-  if (newText.length <= oldLength || oldLength === 0) {
+  // If user backspaced, update text immediately
+  if (newText.length < oldLength) {
     textNode.textContent = newText;
     return;
   }
+  // No text change
+  if (newText.length === oldLength) {
+    return;
+  }
+
   const settled = newText.slice(0, oldLength);
   const fresh = newText.slice(oldLength);
   textNode.textContent = settled;
-  const freshSpan = document.createElement('span');
-  freshSpan.className = 'char-fresh';
-  freshSpan.textContent = fresh;
-  textNode.appendChild(freshSpan);
+
+  // Render incoming character(s) through magnifying glass lens focus (blur → unblur / zoom)
+  const chars = Array.from(fresh);
+  if (chars.length <= 8) {
+    chars.forEach((ch, idx) => {
+      const span = document.createElement('span');
+      span.className = 'lens-focus-fresh';
+      span.textContent = ch;
+      if (idx > 0) {
+        span.style.animationDelay = `${idx * 0.04}s`;
+      }
+      textNode.appendChild(span);
+    });
+  } else {
+    const span = document.createElement('span');
+    span.className = 'lens-focus-fresh';
+    span.textContent = fresh;
+    textNode.appendChild(span);
+  }
 }
 
 function handleOpponentLiveTyping(text) {

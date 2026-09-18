@@ -557,20 +557,55 @@ body {
   display: inline;
 }
 
-.char-fresh {
-  display: inline;
-  animation: smoothCharBloom 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  will-change: opacity, filter;
+.message-row.live-typing-row {
+  animation: lensBubbleFocus 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes smoothCharBloom {
+@keyframes lensBubbleFocus {
   0% {
-    opacity: 0.35;
-    filter: blur(0.75px);
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(0.95) translateY(4px);
   }
   100% {
     opacity: 1;
     filter: blur(0);
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   MAGNIFYING GLASS LENS FOCUS (BLUR → UNBLUR / ZOOM)
+   ══════════════════════════════════════════════════ */
+.lens-focus-fresh,
+.char-fresh {
+  display: inline-block;
+  white-space: pre-wrap;
+  animation: magnifyingLensFocus 0.44s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, filter, opacity;
+  transform-origin: center baseline;
+}
+
+@keyframes magnifyingLensFocus {
+  0% {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(1.36) translateY(-1px);
+  }
+  35% {
+    opacity: 0.65;
+    filter: blur(3.5px);
+    transform: scale(1.14);
+  }
+  75% {
+    opacity: 0.95;
+    filter: blur(0.7px);
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1) translateY(0);
   }
 }
 
