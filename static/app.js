@@ -429,6 +429,12 @@ function handleWsMessage(msg) {
     case 'typing_stop':
       hideOpponentLivePreview();
       break;
+
+    // ── Flying Balloon Emoji Reaction ─────────────
+    case 'flying_emoji':
+      createFlyingBalloon(msg.emoji);
+      playOpponentKeypressSound();
+      break;
   }
 }
 
@@ -1322,19 +1328,6 @@ function setupEventListeners() {
     });
   }
 
-  // Emoji — prevent stealing focus so mobile keyboard does not close
-  function insertEmoji(emojiChar) {
-    const start = chatInput.selectionStart ?? chatInput.value.length;
-    const end = chatInput.selectionEnd ?? chatInput.value.length;
-    const val = chatInput.value;
-    chatInput.value = val.substring(0, start) + emojiChar + val.substring(end);
-    chatInput.selectionStart = chatInput.selectionEnd = start + emojiChar.length;
-    chatInput.dispatchEvent(new Event('input'));
-    chatInput.focus({ preventScroll: true });
-    setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
-    setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
-  }
-
   if (emojiBtn) {
     emojiBtn.addEventListener('pointerdown', (e) => e.preventDefault());
     emojiBtn.addEventListener('mousedown', (e) => e.preventDefault());
@@ -1361,12 +1354,12 @@ function setupEventListeners() {
       btn.addEventListener('mousedown', (e) => e.preventDefault());
       btn.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        insertEmoji(btn.textContent);
+        sendFlyingEmojiBalloon(btn.textContent.trim());
       }, { passive: false });
 
       btn.addEventListener('click', (e) => {
         e.preventDefault();
-        insertEmoji(btn.textContent);
+        sendFlyingEmojiBalloon(btn.textContent.trim());
       });
     });
 
@@ -1499,3 +1492,102 @@ function formatCurrentTime() {
 function formatDuration(sec) {
   return `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, '0')}`;
 }
+
+// ─────────────────────────────────────────────────
+//  Floating Balloon Emoji Reactions
+// ─────────────────────────────────────────────────
+let lastEmojiTapTime = 0;
+
+function getBalloonsContainer() {
+  let container = document.getElementById('floatingBalloonsContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'floatingBalloonsContainer';
+    container.className = 'floating-balloons-container';
+    (chatApp || document.body).appendChild(container);
+  }
+  return container;
+}
+
+function createFlyingBalloon(emojiChar) {
+  if (!emojiChar) return;
+  const container = getBalloonsContainer();
+
+  // Release a buoyant cluster: 1 lead balloon + 2 companion balloons
+  const count = 3;
+  const baseLeft = 15 + Math.random() * 70; // 15% to 85% width
+
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      const balloon = document.createElement('div');
+      balloon.className = 'flying-balloon';
+
+      const isLead = (i === 0);
+      const size = isLead ? (36 + Math.floor(Math.random() * 8)) : (24 + Math.floor(Math.random() * 8));
+      const leftOffset = isLead ? 0 : (Math.random() * 34 - 17);
+      const leftPos = Math.max(8, Math.min(92, baseLeft + leftOffset));
+
+      const duration = (2.6 + Math.random() * 0.8).toFixed(2);
+      const sway1 = (12 + Math.random() * 16) * (Math.random() > 0.5 ? 1 : -1);
+      const sway2 = -sway1 * (0.8 + Math.random() * 0.3);
+      const sway3 = (10 + Math.random() * 14) * (Math.random() > 0.5 ? 1 : -1);
+      const sway4 = -sway3 * (0.7 + Math.random() * 0.4);
+      const rot1 = (4 + Math.random() * 8) * (sway1 > 0 ? 1 : -1);
+      const rot2 = -rot1 * 0.8;
+      const rot3 = (3 + Math.random() * 6) * (sway3 > 0 ? 1 : -1);
+      const rot4 = -rot3;
+
+      balloon.style.left = `${leftPos}%`;
+      balloon.style.setProperty('--fly-duration', `${duration}s`);
+      balloon.style.setProperty('--balloon-size', `${size}px`);
+      balloon.style.setProperty('--sway-1', `${sway1}px`);
+      balloon.style.setProperty('--sway-2', `${sway2}px`);
+      balloon.style.setProperty('--sway-3', `${sway3}px`);
+      balloon.style.setProperty('--sway-4', `${sway4}px`);
+      balloon.style.setProperty('--rot-1', `${rot1}deg`);
+      balloon.style.setProperty('--rot-2', `${rot2}deg`);
+      balloon.style.setProperty('--rot-3', `${rot3}deg`);
+      balloon.style.setProperty('--rot-4', `${rot4}deg`);
+
+      balloon.innerHTML = `
+        <span class="balloon-emoji" aria-hidden="true">${emojiChar}</span>
+        <div class="balloon-string" aria-hidden="true"></div>
+      `;
+
+      balloon.addEventListener('animationend', () => {
+        balloon.remove();
+      });
+
+      setTimeout(() => {
+        if (balloon.parentNode) balloon.remove();
+      }, (parseFloat(duration) + 0.6) * 1000);
+
+      container.appendChild(balloon);
+    }, i * 85);
+  }
+}
+
+function sendFlyingEmojiBalloon(emojiChar) {
+  if (!emojiChar) return;
+  const now = Date.now();
+  if (now - lastEmojiTapTime < 50) return;
+  lastEmojiTapTime = now;
+
+  // 1. Instantly trigger floating balloons on own chat inbox
+  createFlyingBalloon(emojiChar);
+
+  // 2. Play subtle tap sound
+  playKeypressSound();
+
+  // 3. Broadcast to opponent via live WebSocket (zero server delay)
+  wsSend({
+    type: 'flying_emoji',
+    emoji: emojiChar
+  });
+
+  // 4. Do NOT input emoji into chatInput, and preserve virtual keyboard focus
+  chatInput.focus({ preventScroll: true });
+  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
+  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
+}
+

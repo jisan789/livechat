@@ -1080,3 +1080,91 @@ body {
 .avatar-badge {
   transition: background 0.4s ease;
 }
+
+/* ══════════════════════════════════════════════════
+   FLOATING BALLOON EMOJI REACTIONS
+   ══════════════════════════════════════════════════ */
+.floating-balloons-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 150;
+}
+
+.flying-balloon {
+  position: absolute;
+  bottom: 74px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  user-select: none;
+  will-change: transform, opacity;
+  animation: balloonFlyUp var(--fly-duration, 3.2s) cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.balloon-emoji {
+  font-size: var(--balloon-size, 38px);
+  line-height: 1;
+  display: inline-block;
+  transform-origin: center bottom;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.18));
+  animation: balloonWiggle 0.9s ease-in-out infinite alternate;
+}
+
+.balloon-string {
+  width: 1.5px;
+  height: 22px;
+  background: linear-gradient(to bottom, rgba(156, 163, 175, 0.75), rgba(156, 163, 175, 0.05));
+  margin-top: -2px;
+  transform-origin: top center;
+  animation: stringSway 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes balloonFlyUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) translateX(0) scale(0.35) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(-40px) translateX(var(--sway-1, 14px)) scale(1.18) rotate(var(--rot-1, 6deg));
+  }
+  28% {
+    transform: translateY(-140px) translateX(var(--sway-2, -16px)) scale(1) rotate(var(--rot-2, -5deg));
+  }
+  55% {
+    transform: translateY(-300px) translateX(var(--sway-3, 18px)) scale(1) rotate(var(--rot-3, 5deg));
+  }
+  78% {
+    opacity: 0.95;
+    transform: translateY(-460px) translateX(var(--sway-4, -14px)) scale(0.96) rotate(var(--rot-4, -4deg));
+  }
+  92% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(-100vh - 80px)) translateX(var(--sway-1, 8px)) scale(0.88) rotate(var(--rot-1, 3deg));
+  }
+}
+
+@keyframes balloonWiggle {
+  0% {
+    transform: rotate(-6deg) scaleX(0.95);
+  }
+  100% {
+    transform: rotate(6deg) scaleX(1.05);
+  }
+}
+
+@keyframes stringSway {
+  0% {
+    transform: rotate(-12deg);
+  }
+  100% {
+    transform: rotate(12deg);
+  }
+}
+
