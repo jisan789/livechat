@@ -119,9 +119,12 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
             data["from"] = user_key
             await notify_opponent(user_key, data)
 
-            # 2. Persist to PHP/DB in background task asynchronously without blocking live chat
+            # 2. Persist text messages to PHP/DB in background task without blocking live chat.
+            # Voice messages are sent purely via live WebSocket with no external PHP storage.
             if msg_type == "chat":
                 asyncio.create_task(background_save_message(user_key, opponent, msg_type, data))
+            elif msg_type == "voice":
+                logger.info(f"[Voice] Live WebSocket voice note forwarded from {user_key} to {opponent} ({data.get('duration', 0)}s)")
 
             logger.debug(f"  {user_key} → {opponent}: {msg_type}")
 

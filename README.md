@@ -7,7 +7,8 @@ A private real-time chat application for **Jisu** and **Jenu**.
 - 💬 Real-time messaging via WebSocket
 - ⌨️ Live typing indicators with keypress sounds
 - 📷 Image sharing
-- 🎤 Voice note recording
+- 🎤 Real-time voice note recording & playback (live WebSocket, zero external PHP storage required)
+- 🎙️ Dynamic action button (Mic mode before typing, Send mode when typing)
 - 🔇 Sound mute/unmute toggle
 
 ## Local Development
