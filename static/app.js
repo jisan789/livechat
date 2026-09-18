@@ -701,9 +701,7 @@ function handleSend() {
   emojiPopover.classList.remove('show');
 
   // Retain focus so virtual keyboard does not close
-  chatInput.focus({ preventScroll: true });
-  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
-  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
+  keepInputFocused();
 
   // Clear live typing preview on opponent's screen
   wsSend({ type: 'live_typing', text: '' });
@@ -753,6 +751,17 @@ function scrollToBottom() {
 }
 
 // ─────────────────────────────────────────────────
+//  Input Focus Preservation Helper
+// ─────────────────────────────────────────────────
+function keepInputFocused() {
+  if (chatInput) {
+    chatInput.focus({ preventScroll: true });
+    setTimeout(() => { if (chatInput) chatInput.focus({ preventScroll: true }); }, 10);
+    setTimeout(() => { if (chatInput) chatInput.focus({ preventScroll: true }); }, 50);
+  }
+}
+
+// ─────────────────────────────────────────────────
 //  Love Reaction by Double-Tap (Live only, zero DB)
 // ─────────────────────────────────────────────────
 function attachDoubleTapReaction(bubble, messageRow) {
@@ -761,20 +770,22 @@ function attachDoubleTapReaction(bubble, messageRow) {
   let lastTapTime = 0;
   let lastTapPos = { x: 0, y: 0 };
 
-  // 1. Prevent desktop double-click text selection
+  // 1. Prevent desktop double-click text selection while preserving keyboard focus
   bubble.addEventListener('mousedown', (e) => {
-    if (e.detail > 1) {
+    if (e.detail > 1 || document.activeElement === chatInput) {
       e.preventDefault();
+      if (document.activeElement === chatInput) keepInputFocused();
     }
   });
 
   bubble.addEventListener('pointerdown', (e) => {
-    if (e.detail > 1) {
+    if (e.detail > 1 || document.activeElement === chatInput) {
       e.preventDefault();
+      if (document.activeElement === chatInput) keepInputFocused();
     }
   });
 
-  // 2. Intercept double-tap on touchstart to prevent keyboard from popping up
+  // 2. Intercept double-tap on touchstart while keeping keyboard focused
   bubble.addEventListener('touchstart', (e) => {
     if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
       return;
@@ -784,20 +795,20 @@ function attachDoubleTapReaction(bubble, messageRow) {
     const timeDiff = now - lastTapTime;
     const dist = touch ? Math.hypot(touch.clientX - lastTapPos.x, touch.clientY - lastTapPos.y) : 0;
 
+    // If input is focused, make sure it stays focused so virtual keyboard never closes
+    if (document.activeElement === chatInput) {
+      keepInputFocused();
+    }
+
     if (timeDiff > 0 && timeDiff < 350 && dist < 40) {
-      // Prevent browser from treating this second tap as text selection or input focus
       e.preventDefault();
       lastTapTime = 0;
 
-      // Blur input so keyboard immediately closes/stays closed
-      if (chatInput) chatInput.blur();
-      if (document.activeElement && document.activeElement !== document.body) {
-        document.activeElement.blur();
-      }
       if (window.getSelection) {
         window.getSelection().removeAllRanges();
       }
 
+      keepInputFocused();
       triggerLoveReact(messageRow, true);
     } else {
       lastTapTime = now;
@@ -813,13 +824,10 @@ function attachDoubleTapReaction(bubble, messageRow) {
       return;
     }
     e.preventDefault();
-    if (chatInput) chatInput.blur();
-    if (document.activeElement && document.activeElement !== document.body) {
-      document.activeElement.blur();
-    }
     if (window.getSelection) {
       window.getSelection().removeAllRanges();
     }
+    keepInputFocused();
     triggerLoveReact(messageRow, true);
   });
 }
@@ -847,13 +855,25 @@ function triggerLoveReact(messageRow, isLocal = true) {
       e.stopPropagation();
       e.preventDefault();
       removeLoveReact(messageRow, true);
+      keepInputFocused();
     };
+    badge.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      keepInputFocused();
+    });
+    badge.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      keepInputFocused();
+    });
     badge.addEventListener('click', handleRemove);
     badge.addEventListener('touchend', handleRemove);
 
     bubble.classList.add('has-react');
     bubble.appendChild(badge);
   }
+
+  // Preserve focus so keyboard doesn't close on react
+  keepInputFocused();
 
   // 3. Broadcast to opponent live over WebSocket
   if (isLocal && msgId) {
@@ -1374,9 +1394,7 @@ function resetRecordingUI() {
     inputNormalContent.style.pointerEvents = 'auto';
   }
   updateActionBtnState();
-  chatInput.focus({ preventScroll: true });
-  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
-  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
+  keepInputFocused();
 }
 
 function updateActionBtnState() {
@@ -1430,13 +1448,47 @@ function applyOpponentProfile(url, name) {
 //  Event Listeners Setup
 // ─────────────────────────────────────────────────
 function setupEventListeners() {
-  // Dismiss virtual keyboard when tapping chat message area
+  // Dismiss virtual keyboard ONLY when tapping genuine blank empty space (no message)
   if (chatMessages) {
-    chatMessages.addEventListener('touchstart', (e) => {
-      if (document.activeElement === chatInput && !e.target.closest('#chatFooter')) {
+    const handleBlankAreaTap = (e) => {
+      // If clicking or touching on a message row, bubble, reaction, footer, header, or popover, DO NOT close keyboard!
+      if (
+        e.target.closest('.message-row') ||
+        e.target.closest('#chatFooter') ||
+        e.target.closest('.chat-header') ||
+        e.target.closest('#emojiPopover') ||
+        e.target.closest('#emojiBtn') ||
+        e.target.closest('.floating-balloons-container')
+      ) {
+        return;
+      }
+      // Only close keyboard when tapping genuine blank empty background space
+      if (document.activeElement === chatInput) {
         chatInput.blur();
       }
-    }, { passive: true });
+    };
+
+    chatMessages.addEventListener('touchstart', handleBlankAreaTap, { passive: true });
+    chatMessages.addEventListener('click', handleBlankAreaTap);
+
+    // Prevent message row interactions from stealing focus from chatInput
+    chatMessages.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.message-row') && document.activeElement === chatInput) {
+        if (!e.target.closest('.voice-play-btn')) {
+          e.preventDefault();
+        }
+        keepInputFocused();
+      }
+    });
+
+    chatMessages.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.message-row') && document.activeElement === chatInput) {
+        if (!e.target.closest('.voice-play-btn')) {
+          e.preventDefault();
+        }
+        keepInputFocused();
+      }
+    });
   }
   // Sound toggle
   if (soundToggleBtn) {
@@ -1862,8 +1914,6 @@ function sendFlyingEmojiBalloon(emojiChar) {
   });
 
   // 4. Do NOT input emoji into chatInput, and preserve virtual keyboard focus
-  chatInput.focus({ preventScroll: true });
-  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
-  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
+  keepInputFocused();
 }
 
