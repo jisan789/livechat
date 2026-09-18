@@ -223,6 +223,10 @@ function loginUser(userKey) {
 }
 
 function lockApp() {
+  isClosingByAvatarClick = true;
+  if (chatInput) chatInput.blur();
+  setTimeout(() => { isClosingByAvatarClick = false; }, 500);
+
   if (isRecording) {
     cancelVoiceRecording();
   }
@@ -753,23 +757,17 @@ function scrollToBottom() {
 // ─────────────────────────────────────────────────
 //  Input Focus Preservation Helper
 // ─────────────────────────────────────────────────
-let shouldKeepInputFocused = false;
-let keepFocusTimer = null;
+let isClosingByAvatarClick = false;
 
 function markMessageInteraction() {
-  shouldKeepInputFocused = true;
-  clearTimeout(keepFocusTimer);
-  keepFocusTimer = setTimeout(() => {
-    shouldKeepInputFocused = false;
-  }, 600);
+  // Kept for backward compatibility
 }
 
 function keepInputFocused() {
-  markMessageInteraction();
-  if (chatInput) {
+  if (chatInput && !isClosingByAvatarClick) {
     chatInput.focus({ preventScroll: true });
-    setTimeout(() => { if (chatInput && shouldKeepInputFocused) chatInput.focus({ preventScroll: true }); }, 10);
-    setTimeout(() => { if (chatInput && shouldKeepInputFocused) chatInput.focus({ preventScroll: true }); }, 50);
+    setTimeout(() => { if (chatInput && !isClosingByAvatarClick) chatInput.focus({ preventScroll: true }); }, 10);
+    setTimeout(() => { if (chatInput && !isClosingByAvatarClick) chatInput.focus({ preventScroll: true }); }, 50);
   }
 }
 
@@ -1475,62 +1473,53 @@ function applyOpponentProfile(url, name) {
 //  Event Listeners Setup
 // ─────────────────────────────────────────────────
 function setupEventListeners() {
-  // Dismiss virtual keyboard ONLY when tapping genuine blank empty space (no message)
+  // Dismiss virtual keyboard ONLY when clicking on opponent user profile picture
+  const opponentAvatarWrapper = document.getElementById('avatarWrapper');
+  const headerLeftArea = document.querySelector('.header-left');
+  const handleAvatarDismiss = (e) => {
+    if (document.activeElement === chatInput) {
+      isClosingByAvatarClick = true;
+      chatInput.blur();
+      inputPill.classList.remove('focused');
+      setTimeout(() => {
+        isClosingByAvatarClick = false;
+      }, 500);
+    }
+  };
+
+  if (opponentAvatarWrapper) {
+    opponentAvatarWrapper.addEventListener('pointerdown', () => {
+      if (document.activeElement === chatInput) isClosingByAvatarClick = true;
+    });
+    opponentAvatarWrapper.addEventListener('click', handleAvatarDismiss);
+    opponentAvatarWrapper.addEventListener('touchend', handleAvatarDismiss);
+  } else if (headerLeftArea) {
+    headerLeftArea.addEventListener('pointerdown', () => {
+      if (document.activeElement === chatInput) isClosingByAvatarClick = true;
+    });
+    headerLeftArea.addEventListener('click', handleAvatarDismiss);
+    headerLeftArea.addEventListener('touchend', handleAvatarDismiss);
+  }
+
+  // Prevent chat messages or blank space from dismissing keyboard
   if (chatMessages) {
-    const handleBlankAreaTap = (e) => {
-      // If clicking or touching on a message row, bubble, reaction, footer, header, or popover, DO NOT close keyboard!
-      if (
-        e.target.closest('.message-row') ||
-        e.target.closest('#chatFooter') ||
-        e.target.closest('.chat-header') ||
-        e.target.closest('#emojiPopover') ||
-        e.target.closest('#emojiBtn') ||
-        e.target.closest('.floating-balloons-container')
-      ) {
-        markMessageInteraction();
-        return;
-      }
-      // Only close keyboard when tapping genuine blank empty background space
-      shouldKeepInputFocused = false;
-      if (document.activeElement === chatInput) {
-        chatInput.blur();
-      }
-    };
-
-    chatMessages.addEventListener('touchstart', handleBlankAreaTap, { passive: true });
-    chatMessages.addEventListener('click', handleBlankAreaTap);
-
-    // Prevent message row interactions from stealing focus from chatInput
     chatMessages.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.message-row')) {
-        markMessageInteraction();
-        if (document.activeElement === chatInput) {
-          if (!e.target.closest('.voice-play-btn')) {
-            e.preventDefault();
-          }
-          keepInputFocused();
-        }
+      if (document.activeElement === chatInput && !e.target.closest('.voice-play-btn')) {
+        e.preventDefault();
+        keepInputFocused();
       }
     });
 
     chatMessages.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.message-row')) {
-        markMessageInteraction();
-        if (document.activeElement === chatInput) {
-          if (!e.target.closest('.voice-play-btn')) {
-            e.preventDefault();
-          }
-          keepInputFocused();
-        }
+      if (document.activeElement === chatInput && !e.target.closest('.voice-play-btn')) {
+        e.preventDefault();
+        keepInputFocused();
       }
     });
 
     chatMessages.addEventListener('touchstart', (e) => {
-      if (e.target.closest('.message-row')) {
-        markMessageInteraction();
-        if (document.activeElement === chatInput) {
-          keepInputFocused();
-        }
+      if (document.activeElement === chatInput) {
+        keepInputFocused();
       }
     }, { passive: true });
   }
@@ -1692,68 +1681,88 @@ function setupEventListeners() {
     });
   }
 
+  // Emoji button & popover handling (debounced to avoid opening and instantly closing)
+  let lastEmojiBtnTouchTime = 0;
+  function handleEmojiBtnToggle(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    emojiPopover.classList.toggle('show');
+    if (chatInput) {
+      chatInput.focus({ preventScroll: true });
+    }
+  }
+
   if (emojiBtn) {
     emojiBtn.addEventListener('pointerdown', (e) => {
-      markMessageInteraction();
       e.preventDefault();
+      if (chatInput) chatInput.focus({ preventScroll: true });
     });
     emojiBtn.addEventListener('mousedown', (e) => {
-      markMessageInteraction();
       e.preventDefault();
+      if (chatInput) chatInput.focus({ preventScroll: true });
     });
     emojiBtn.addEventListener('touchstart', (e) => {
-      markMessageInteraction();
-      e.preventDefault();
-      emojiPopover.classList.toggle('show');
-      chatInput.focus({ preventScroll: true });
+      lastEmojiBtnTouchTime = Date.now();
+      handleEmojiBtnToggle(e);
     }, { passive: false });
-
     emojiBtn.addEventListener('click', (e) => {
-      markMessageInteraction();
-      e.stopPropagation();
-      emojiPopover.classList.toggle('show');
-      chatInput.focus({ preventScroll: true });
+      if (Date.now() - lastEmojiBtnTouchTime < 400) return;
+      handleEmojiBtnToggle(e);
     });
   }
 
   if (emojiPopover) {
     emojiPopover.addEventListener('pointerdown', (e) => {
-      markMessageInteraction();
       e.preventDefault();
+      if (chatInput) chatInput.focus({ preventScroll: true });
     });
     emojiPopover.addEventListener('mousedown', (e) => {
-      markMessageInteraction();
       e.preventDefault();
+      if (chatInput) chatInput.focus({ preventScroll: true });
     });
     emojiPopover.addEventListener('touchstart', (e) => {
-      markMessageInteraction();
-      e.preventDefault();
-    }, { passive: false });
+      if (chatInput) chatInput.focus({ preventScroll: true });
+    }, { passive: true });
 
+    let lastEmojiSendTime = 0;
     document.querySelectorAll('.emoji-btn').forEach(btn => {
       btn.addEventListener('pointerdown', (e) => {
-        markMessageInteraction();
         e.preventDefault();
+        if (chatInput) chatInput.focus({ preventScroll: true });
       });
       btn.addEventListener('mousedown', (e) => {
-        markMessageInteraction();
         e.preventDefault();
+        if (chatInput) chatInput.focus({ preventScroll: true });
       });
-      btn.addEventListener('touchstart', (e) => {
-        markMessageInteraction();
-        e.preventDefault();
-        sendFlyingEmojiBalloon(btn.textContent.trim());
-      }, { passive: false });
 
-      btn.addEventListener('click', (e) => {
-        markMessageInteraction();
-        e.preventDefault();
+      const handleEmojiClick = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        const now = Date.now();
+        if (now - lastEmojiSendTime < 300) return;
+        lastEmojiSendTime = now;
+
         sendFlyingEmojiBalloon(btn.textContent.trim());
-      });
+        if (chatInput) chatInput.focus({ preventScroll: true });
+      };
+
+      btn.addEventListener('touchstart', handleEmojiClick, { passive: false });
+      btn.addEventListener('click', handleEmojiClick);
     });
 
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#emojiPopover') && !e.target.closest('#emojiBtn')) {
+        if (Date.now() - lastEmojiBtnTouchTime < 400) return;
+        emojiPopover.classList.remove('show');
+      }
+    });
+    document.addEventListener('touchend', (e) => {
+      if (!e.target.closest('#emojiPopover') && !e.target.closest('#emojiBtn')) {
+        if (Date.now() - lastEmojiBtnTouchTime < 400) return;
         emojiPopover.classList.remove('show');
       }
     });
@@ -1783,7 +1792,8 @@ function setupKeyboardUIHandling() {
     setTimeout(scrollToBottom, 250);
   });
   chatInput.addEventListener('blur', () => {
-    if (shouldKeepInputFocused) {
+    // NOTHING should close the keyboard until clicking on opponent user profile pic!
+    if (!isClosingByAvatarClick) {
       chatInput.focus({ preventScroll: true });
       return;
     }
