@@ -295,6 +295,11 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
   overscroll-behavior-y: contain;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .chat-body::-webkit-scrollbar {
@@ -375,7 +380,7 @@ body {
   font-weight: 500;
   word-break: break-word;
   position: relative;
-  touch-action: manipulation;
+  touch-action: pan-y;
   transition: margin-bottom 0.18s ease;
   -webkit-user-select: none;
   -moz-user-select: none;

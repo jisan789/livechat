@@ -759,37 +759,64 @@ function attachDoubleTapReaction(bubble, messageRow) {
   if (!bubble || !messageRow) return;
 
   let lastTapTime = 0;
+  let lastTapPos = { x: 0, y: 0 };
 
-  // Prevent desktop double-click text selection
+  // 1. Prevent desktop double-click text selection
   bubble.addEventListener('mousedown', (e) => {
     if (e.detail > 1) {
       e.preventDefault();
     }
   });
 
-  bubble.addEventListener('touchend', (e) => {
-    if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
-      return;
-    }
-    const currentTime = Date.now();
-    const tapInterval = currentTime - lastTapTime;
-    if (tapInterval > 0 && tapInterval < 320) {
+  bubble.addEventListener('pointerdown', (e) => {
+    if (e.detail > 1) {
       e.preventDefault();
-      if (window.getSelection) {
-        window.getSelection().removeAllRanges();
-      }
-      lastTapTime = 0;
-      triggerLoveReact(messageRow, true);
-    } else {
-      lastTapTime = currentTime;
     }
   });
 
+  // 2. Intercept double-tap on touchstart to prevent keyboard from popping up
+  bubble.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
+      return;
+    }
+    const touch = e.touches[0];
+    const now = Date.now();
+    const timeDiff = now - lastTapTime;
+    const dist = touch ? Math.hypot(touch.clientX - lastTapPos.x, touch.clientY - lastTapPos.y) : 0;
+
+    if (timeDiff > 0 && timeDiff < 350 && dist < 40) {
+      // Prevent browser from treating this second tap as text selection or input focus
+      e.preventDefault();
+      lastTapTime = 0;
+
+      // Blur input so keyboard immediately closes/stays closed
+      if (chatInput) chatInput.blur();
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
+      if (window.getSelection) {
+        window.getSelection().removeAllRanges();
+      }
+
+      triggerLoveReact(messageRow, true);
+    } else {
+      lastTapTime = now;
+      if (touch) {
+        lastTapPos = { x: touch.clientX, y: touch.clientY };
+      }
+    }
+  }, { passive: false });
+
+  // 3. Desktop dblclick handling
   bubble.addEventListener('dblclick', (e) => {
     if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
       return;
     }
     e.preventDefault();
+    if (chatInput) chatInput.blur();
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
     if (window.getSelection) {
       window.getSelection().removeAllRanges();
     }
@@ -1403,6 +1430,14 @@ function applyOpponentProfile(url, name) {
 //  Event Listeners Setup
 // ─────────────────────────────────────────────────
 function setupEventListeners() {
+  // Dismiss virtual keyboard when tapping chat message area
+  if (chatMessages) {
+    chatMessages.addEventListener('touchstart', (e) => {
+      if (document.activeElement === chatInput && !e.target.closest('#chatFooter')) {
+        chatInput.blur();
+      }
+    }, { passive: true });
+  }
   // Sound toggle
   if (soundToggleBtn) {
     const onIcon  = soundToggleBtn.querySelector('.sound-on-icon');
