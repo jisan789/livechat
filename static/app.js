@@ -457,44 +457,67 @@ function setPresenceOffline() {
 }
 
 // ─────────────────────────────────────────────────
-//  Typing Indicators & Live Keystroke Stream
+//  Typing Indicators & Live Keystroke Sea-Wave Stream
 // ─────────────────────────────────────────────────
 let currentLiveIncomingRow = null;
-let lastOpponentTextLength = 0;
+let targetOpponentText = '';
+let displayedOpponentChars = [];
+let waveStreamingTimeout = null;
 
-function renderSmoothLiveText(textNode, newText, oldLength) {
-  if (!textNode) return;
-  // If user backspaced, update text immediately
-  if (newText.length < oldLength) {
-    textNode.textContent = newText;
+function resetWaveStream() {
+  if (waveStreamingTimeout) {
+    clearTimeout(waveStreamingTimeout);
+    waveStreamingTimeout = null;
+  }
+  targetOpponentText = '';
+  displayedOpponentChars = [];
+}
+
+function processNextWaveChar(textNode) {
+  if (!textNode || !currentLiveIncomingRow) {
+    waveStreamingTimeout = null;
     return;
   }
-  // No text change
-  if (newText.length === oldLength) {
+
+  const targetChars = Array.from(targetOpponentText);
+  const currentLen = displayedOpponentChars.length;
+
+  // Fully caught up with incoming wave
+  if (currentLen >= targetChars.length) {
+    waveStreamingTimeout = null;
     return;
   }
 
-  const settled = newText.slice(0, oldLength);
-  const fresh = newText.slice(oldLength);
-  textNode.textContent = settled;
+  // Handle backspace or text replacement
+  const expectedPrefix = displayedOpponentChars.join('');
+  if (!targetOpponentText.startsWith(expectedPrefix)) {
+    displayedOpponentChars = targetChars.slice(0, currentLen);
+    textNode.textContent = displayedOpponentChars.join('');
+  }
 
-  // Render incoming character(s) through magnifying glass lens focus (blur → unblur / zoom)
-  const chars = Array.from(fresh);
-  if (chars.length <= 8) {
-    chars.forEach((ch, idx) => {
-      const span = document.createElement('span');
-      span.className = 'lens-focus-fresh';
-      span.textContent = ch;
-      if (idx > 0) {
-        span.style.animationDelay = `${idx * 0.04}s`;
-      }
-      textNode.appendChild(span);
-    });
+  // Get next character in the sea wave flow
+  const nextChar = targetChars[displayedOpponentChars.length];
+  if (nextChar !== undefined) {
+    displayedOpponentChars.push(nextChar);
+
+    const charSpan = document.createElement('span');
+    charSpan.className = 'wave-char';
+    charSpan.textContent = nextChar;
+    textNode.appendChild(charSpan);
+
+    playOpponentLiveSound();
+    scrollToBottom();
+  }
+
+  // Flow cadence: natural sea wave speed (~38ms), adaptive for faster chunks
+  const remaining = targetChars.length - displayedOpponentChars.length;
+  if (remaining > 0) {
+    const delay = remaining > 12 ? 15 : (remaining > 5 ? 24 : 38);
+    waveStreamingTimeout = setTimeout(() => {
+      processNextWaveChar(textNode);
+    }, delay);
   } else {
-    const span = document.createElement('span');
-    span.className = 'lens-focus-fresh';
-    span.textContent = fresh;
-    textNode.appendChild(span);
+    waveStreamingTimeout = null;
   }
 }
 
@@ -502,14 +525,16 @@ function handleOpponentLiveTyping(text) {
   clearTimeout(opponentTypingTimer);
 
   if (!text || text.length === 0) {
+    resetWaveStream();
     if (currentLiveIncomingRow) {
       currentLiveIncomingRow.remove();
       currentLiveIncomingRow = null;
     }
-    lastOpponentTextLength = 0;
     hideOpponentTyping();
     return;
   }
+
+  targetOpponentText = text;
 
   // Update status to typing...
   opponentTyping = true;
@@ -554,24 +579,30 @@ function handleOpponentLiveTyping(text) {
 
   const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
   if (textNode) {
-    renderSmoothLiveText(textNode, text, lastOpponentTextLength);
-  }
+    const targetChars = Array.from(text);
 
-  // Play peaceful keypress whisper sound as characters are typed by opponent
-  if (text.length !== lastOpponentTextLength) {
-    playOpponentLiveSound();
+    // If opponent deleted/backspaced text
+    if (targetChars.length < displayedOpponentChars.length) {
+      if (waveStreamingTimeout) {
+        clearTimeout(waveStreamingTimeout);
+        waveStreamingTimeout = null;
+      }
+      displayedOpponentChars = targetChars;
+      textNode.textContent = text;
+      scrollToBottom();
+    } else if (!waveStreamingTimeout) {
+      // Begin rolling wave of characters
+      processNextWaveChar(textNode);
+    }
   }
-  lastOpponentTextLength = text.length;
-
-  scrollToBottom();
 
   // Auto-cleanup after 10s of silence if abandoned
   opponentTypingTimer = setTimeout(() => {
+    resetWaveStream();
     if (currentLiveIncomingRow) {
       currentLiveIncomingRow.remove();
       currentLiveIncomingRow = null;
     }
-    lastOpponentTextLength = 0;
     hideOpponentTyping();
   }, 10000);
 }
@@ -602,12 +633,12 @@ function hideOpponentTyping() {
 }
 
 function clearChatDOM() {
+  resetWaveStream();
   document.querySelectorAll('#chatMessages .message-row').forEach(row => row.remove());
   if (currentLiveIncomingRow) {
     currentLiveIncomingRow.remove();
     currentLiveIncomingRow = null;
   }
-  lastOpponentTextLength = 0;
   hideOpponentTyping();
 }
 
@@ -623,6 +654,7 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
 
   // If the message was already being typed live, finalize that exact bubble!
   if (currentLiveIncomingRow) {
+    resetWaveStream();
     const bubble = currentLiveIncomingRow.querySelector('.bubble');
     const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
     const cursorNode = currentLiveIncomingRow.querySelector('.streaming-cursor');
@@ -647,7 +679,6 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
     }
 
     currentLiveIncomingRow = null;
-    lastOpponentTextLength = 0;
     scrollToBottom();
     return;
   }

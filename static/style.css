@@ -575,37 +575,38 @@ body {
 }
 
 /* ══════════════════════════════════════════════════
-   MAGNIFYING GLASS LENS FOCUS (BLUR → UNBLUR / ZOOM)
+   SEA WAVE LIVE TYPING FLOW (CREST & CALM UNBLUR)
    ══════════════════════════════════════════════════ */
+.wave-char,
 .lens-focus-fresh,
 .char-fresh {
   display: inline-block;
   white-space: pre-wrap;
-  animation: magnifyingLensFocus 0.44s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   will-change: transform, filter, opacity;
-  transform-origin: center baseline;
+  animation: seaWaveRoll 0.52s cubic-bezier(0.2, 0.82, 0.25, 1) forwards;
+  transform-origin: center bottom;
 }
 
-@keyframes magnifyingLensFocus {
+@keyframes seaWaveRoll {
   0% {
     opacity: 0;
-    filter: blur(8px);
-    transform: scale(1.36) translateY(-1px);
+    filter: blur(5.5px);
+    transform: translateY(9px) scale(0.82) rotate(-1.5deg);
   }
-  35% {
-    opacity: 0.65;
-    filter: blur(3.5px);
-    transform: scale(1.14);
+  42% {
+    opacity: 0.82;
+    filter: blur(1.8px);
+    transform: translateY(-3.5px) scale(1.08) rotate(0.8deg); /* crest of the wave */
   }
   75% {
-    opacity: 0.95;
-    filter: blur(0.7px);
-    transform: scale(0.98);
+    opacity: 0.96;
+    filter: blur(0.4px);
+    transform: translateY(1px) scale(0.98) rotate(-0.3deg); /* gentle wave dip */
   }
   100% {
     opacity: 1;
     filter: blur(0);
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1) rotate(0deg); /* serene calm surface */
   }
 }
 
