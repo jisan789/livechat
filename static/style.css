@@ -322,6 +322,11 @@ body {
   flex-direction: column;
   max-width: 82%;
   animation: messageSlide 0.22s ease-out forwards;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Extra breathing room when speaker changes */
@@ -372,6 +377,11 @@ body {
   position: relative;
   touch-action: manipulation;
   transition: margin-bottom 0.18s ease;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Double-Tap Love React Burst & Badge */

@@ -760,6 +760,13 @@ function attachDoubleTapReaction(bubble, messageRow) {
 
   let lastTapTime = 0;
 
+  // Prevent desktop double-click text selection
+  bubble.addEventListener('mousedown', (e) => {
+    if (e.detail > 1) {
+      e.preventDefault();
+    }
+  });
+
   bubble.addEventListener('touchend', (e) => {
     if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
       return;
@@ -768,6 +775,9 @@ function attachDoubleTapReaction(bubble, messageRow) {
     const tapInterval = currentTime - lastTapTime;
     if (tapInterval > 0 && tapInterval < 320) {
       e.preventDefault();
+      if (window.getSelection) {
+        window.getSelection().removeAllRanges();
+      }
       lastTapTime = 0;
       triggerLoveReact(messageRow, true);
     } else {
@@ -780,6 +790,9 @@ function attachDoubleTapReaction(bubble, messageRow) {
       return;
     }
     e.preventDefault();
+    if (window.getSelection) {
+      window.getSelection().removeAllRanges();
+    }
     triggerLoveReact(messageRow, true);
   });
 }
