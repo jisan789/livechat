@@ -488,6 +488,7 @@ body {
 /* Match the exact shapes from mockup */
 .message-row.outgoing .bubble {
   border-radius: 18px 18px 5px 18px;
+  padding-right: 18px;
 }
 
 .message-row.incoming .bubble {
@@ -541,11 +542,11 @@ body {
   }
 }
 
-/* Seen Status Indicator (Tiny vivid green dot at bottom-right corner of outgoing bubble) */
+/* Seen Status Indicator (Tiny vivid green dot inside bottom-right corner of outgoing bubble) */
 .seen-dot {
   position: absolute;
-  bottom: 3px;
-  right: -6px;
+  bottom: 4px;
+  right: 5px;
   width: 5.5px;
   height: 5.5px;
   border-radius: 50%;
