@@ -300,6 +300,9 @@ async function loadChatHistory(userKey) {
       if (msg.msg_type === 'chat') {
         appendMessage(msg.text_content, type, timeStr, msgIdStr);
         appendedAny = true;
+      } else if (msg.msg_type === 'voice' && msg.text_content) {
+        appendVoiceMessage(msg.text_content, msg.media_duration || 1, type, timeStr, msgIdStr);
+        appendedAny = true;
       }
       existingMsgIds.add(msgIdStr);
     }
@@ -1119,7 +1122,7 @@ async function startVoiceRecording() {
 
       appendVoiceMessage(base64Audio, finalDuration, 'outgoing', clientTime, null, waveformContour);
 
-      // Sent purely via live WebSocket with zero external PHP server storage
+      // Sent via live WebSocket & persisted to PHP/DB storage in background
       wsSend({
         type: 'voice',
         audio: base64Audio,

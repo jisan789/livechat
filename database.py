@@ -72,6 +72,7 @@ def save_message(
         "recipient": recipient,
         "msg_type": msg_type,
         "text_content": text_content,
+        "audio": text_content if msg_type == "voice" else None,
         "media_duration": media_duration,
         "client_time": client_time,
     }
@@ -89,7 +90,7 @@ def save_message(
                 },
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 if result.get("status") == "ok" and "data" in result:
                     return result["data"]
@@ -136,7 +137,7 @@ def get_conversation(user1: str, user2: str, limit: int = 200) -> List[Dict[str,
                 url,
                 headers={"User-Agent": "LiveChat-Server/1.0"}
             )
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 if result.get("status") == "ok" and "messages" in result:
                     return result["messages"]

@@ -86,6 +86,71 @@ function appendMessage($file, $newMsg) {
     return false;
 }
 
+// Helper: Save base64 voice note to audio file in /voice/ directory
+function saveVoiceAudioFile($dataUrlOrBase64) {
+    if (empty($dataUrlOrBase64)) return null;
+
+    $ext = 'webm';
+    $binary = null;
+
+    // Check if Data URL: data:audio/webm;codecs=opus;base64,... or data:audio/mp4;base64,...
+    if (preg_match('/^data:audio\/([a-zA-Z0-9_\-\+]+)(?:;[a-zA-Z0-9_\-=]+)*;base64,(.+)$/s', $dataUrlOrBase64, $matches)) {
+        $mime = strtolower($matches[1]);
+        if (strpos($mime, 'ogg') !== false) {
+            $ext = 'ogg';
+        } elseif (strpos($mime, 'mp4') !== false || strpos($mime, 'm4a') !== false || strpos($mime, 'aac') !== false) {
+            $ext = 'm4a';
+        } elseif (strpos($mime, 'wav') !== false) {
+            $ext = 'wav';
+        } elseif (strpos($mime, 'mp3') !== false || strpos($mime, 'mpeg') !== false) {
+            $ext = 'mp3';
+        } else {
+            $ext = 'webm';
+        }
+        $binary = base64_decode($matches[2]);
+    } else {
+        // Raw base64 string
+        $decoded = base64_decode($dataUrlOrBase64, true);
+        if ($decoded !== false && strlen($decoded) > 50) {
+            $binary = $decoded;
+            $ext = 'webm';
+        }
+    }
+
+    if (!$binary) {
+        // If it's already a URL or cannot be decoded as base64, return as-is
+        return $dataUrlOrBase64;
+    }
+
+    $voiceDir = __DIR__ . '/voice';
+    if (!is_dir($voiceDir)) {
+        @mkdir($voiceDir, 0755, true);
+    }
+
+    // Generate unique safe file name
+    $fileName = 'voice_' . time() . '_' . substr(md5(uniqid(mt_rand(), true)), 0, 8) . '.' . $ext;
+    $filePath = $voiceDir . '/' . $fileName;
+
+    if (@file_put_contents($filePath, $binary) !== false) {
+        // Determine base URL dynamically
+        $isHttps = (
+            (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
+            (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
+            (!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
+        );
+        $scheme = $isHttps ? 'https' : 'http';
+        $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : '');
+        $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+
+        if ($host) {
+            return "{$scheme}://{$host}{$scriptDir}/voice/{$fileName}";
+        }
+    }
+
+    // If writing file failed (e.g. read-only host), return original string to persist in JSON
+    return $dataUrlOrBase64;
+}
+
 // Determine Action and Method
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? strtolower(trim($_GET['action'])) : '';
@@ -101,7 +166,7 @@ if (!$action && isset($_POST['action'])) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 0. CLEAR: Empty messages.json
+// 0. CLEAR: Empty messages.json and clean voice files
 // Example: ?action=clear or ?action=empty or POST {"action":"clear"}
 // ─────────────────────────────────────────────────────────────
 if ($action === 'clear' || $action === 'empty') {
@@ -112,9 +177,21 @@ if ($action === 'clear' || $action === 'empty') {
         fflush($fp);
         flock($fp, LOCK_UN);
         fclose($fp);
+
+        // Also clean up any saved voice files
+        $voiceDir = __DIR__ . '/voice';
+        if (is_dir($voiceDir)) {
+            $files = glob($voiceDir . '/*');
+            if (is_array($files)) {
+                foreach ($files as $f) {
+                    if (is_file($f)) @unlink($f);
+                }
+            }
+        }
+
         echo json_encode([
             'status' => 'ok',
-            'message' => 'All messages cleared successfully'
+            'message' => 'All messages and voice notes cleared successfully'
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -151,9 +228,11 @@ if ($method === 'GET' || $action === 'get') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 2. POST: Save a new message
+// 2. POST: Save a new message (chat or voice)
 // Example: POST JSON body:
 // {"sender":"jisu","recipient":"jenu","msg_type":"chat","text_content":"hello","client_time":"10:30 AM"}
+// or for voice:
+// {"sender":"jisu","recipient":"jenu","msg_type":"voice","text_content":"data:audio/webm;base64,...","media_duration":4.5}
 // ─────────────────────────────────────────────────────────────
 if ($method === 'POST') {
     $input = is_array($jsonBody) ? $jsonBody : $_POST;
@@ -161,7 +240,7 @@ if ($method === 'POST') {
     $sender = isset($input['sender']) ? trim($input['sender']) : '';
     $recipient = isset($input['recipient']) ? trim($input['recipient']) : '';
     $msgType = isset($input['msg_type']) ? trim($input['msg_type']) : 'chat';
-    $textContent = isset($input['text_content']) ? $input['text_content'] : (isset($input['text']) ? $input['text'] : null);
+    $textContent = isset($input['text_content']) ? $input['text_content'] : (isset($input['text']) ? $input['text'] : (isset($input['audio']) ? $input['audio'] : null));
     $mediaDuration = isset($input['media_duration']) ? (float)$input['media_duration'] : (isset($input['duration']) ? (float)$input['duration'] : null);
     $clientTime = isset($input['client_time']) ? trim($input['client_time']) : (isset($input['time']) ? trim($input['time']) : '');
 
@@ -169,6 +248,11 @@ if ($method === 'POST') {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'Missing sender or recipient']);
         exit;
+    }
+
+    // For voice messages: save audio binary to /voice/ folder and convert to static URL
+    if ($msgType === 'voice' && !empty($textContent)) {
+        $textContent = saveVoiceAudioFile($textContent);
     }
 
     $newRecord = [
