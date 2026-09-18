@@ -437,6 +437,11 @@ function handleWsMessage(msg) {
     case 'flying_emoji':
       createFlyingBalloon(msg.emoji);
       break;
+
+    // ── Love React (Live show only, zero DB) ───────
+    case 'love_react':
+      handleRemoteLoveReact(msg.msgId, msg.action);
+      break;
   }
 }
 
@@ -648,6 +653,8 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
     return;
   }
 
+  const assignedId = messageId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+
   // If the message was already being typed live, finalize that exact bubble!
   if (currentLiveIncomingRow) {
     resetWaveStream();
@@ -664,8 +671,9 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
     timeEl.textContent = timeStr || formatCurrentTime();
     currentLiveIncomingRow.appendChild(timeEl);
 
-    if (messageId) {
-      currentLiveIncomingRow.dataset.msgId = messageId;
+    currentLiveIncomingRow.dataset.msgId = assignedId;
+    if (bubble) {
+      attachDoubleTapReaction(bubble, currentLiveIncomingRow);
     }
 
     currentLiveIncomingRow = null;
@@ -674,7 +682,7 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
   }
 
   // Otherwise, append standard incoming message bubble
-  appendMessage(text, 'incoming', timeStr, messageId);
+  appendMessage(text, 'incoming', timeStr, assignedId);
 }
 
 // ─────────────────────────────────────────────────
@@ -685,7 +693,8 @@ function handleSend() {
   if (!text) return;
 
   const clientTime = formatCurrentTime();
-  appendMessage(text, 'outgoing', clientTime);
+  const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  appendMessage(text, 'outgoing', clientTime, msgId);
   chatInput.value = '';
   lastLocalTextLength = 0;
   chatInput.dispatchEvent(new Event('input'));
@@ -702,7 +711,7 @@ function handleSend() {
   clearTimeout(typingOutTimer);
 
   // Send the chat message
-  const sent = wsSend({ type: 'chat', text, time: clientTime });
+  const sent = wsSend({ type: 'chat', text, time: clientTime, id: msgId });
   if (!sent) showToast('Saved — will sync when connected', 'info');
 }
 
@@ -713,11 +722,10 @@ function appendMessage(content, type = 'outgoing', timeStr = null, messageId = n
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
     return;
   }
+  const assignedId = messageId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
   const messageRow = document.createElement('div');
   messageRow.className = `message-row ${type}`;
-  if (messageId) {
-    messageRow.dataset.msgId = messageId;
-  }
+  messageRow.dataset.msgId = assignedId;
 
   const bubbleGroup = document.createElement('div');
   bubbleGroup.className = 'bubble-group';
@@ -730,6 +738,8 @@ function appendMessage(content, type = 'outgoing', timeStr = null, messageId = n
   timeEl.className = 'message-time';
   timeEl.textContent = timeStr || formatCurrentTime();
 
+  attachDoubleTapReaction(bubble, messageRow);
+
   bubbleGroup.appendChild(bubble);
   messageRow.appendChild(bubbleGroup);
   messageRow.appendChild(timeEl);
@@ -740,6 +750,130 @@ function appendMessage(content, type = 'outgoing', timeStr = null, messageId = n
 
 function scrollToBottom() {
   setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 40);
+}
+
+// ─────────────────────────────────────────────────
+//  Love Reaction by Double-Tap (Live only, zero DB)
+// ─────────────────────────────────────────────────
+function attachDoubleTapReaction(bubble, messageRow) {
+  if (!bubble || !messageRow) return;
+
+  let lastTapTime = 0;
+
+  bubble.addEventListener('touchend', (e) => {
+    if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
+      return;
+    }
+    const currentTime = Date.now();
+    const tapInterval = currentTime - lastTapTime;
+    if (tapInterval > 0 && tapInterval < 320) {
+      e.preventDefault();
+      lastTapTime = 0;
+      triggerLoveReact(messageRow, true);
+    } else {
+      lastTapTime = currentTime;
+    }
+  });
+
+  bubble.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.voice-play-btn') || e.target.closest('.love-react-badge')) {
+      return;
+    }
+    e.preventDefault();
+    triggerLoveReact(messageRow, true);
+  });
+}
+
+function triggerLoveReact(messageRow, isLocal = true) {
+  if (!messageRow) return;
+  const bubble = messageRow.querySelector('.bubble');
+  if (!bubble) return;
+
+  const msgId = messageRow.dataset.msgId;
+
+  // 1. Play bursting heart pop animation
+  createHeartPopBurst(bubble);
+
+  // 2. Add or keep the persistent love react badge
+  let badge = bubble.querySelector('.love-react-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'love-react-badge';
+    badge.innerHTML = '❤️';
+    badge.title = 'Click to remove reaction';
+    badge.setAttribute('aria-label', 'Love reaction');
+
+    const handleRemove = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      removeLoveReact(messageRow, true);
+    };
+    badge.addEventListener('click', handleRemove);
+    badge.addEventListener('touchend', handleRemove);
+
+    bubble.classList.add('has-react');
+    bubble.appendChild(badge);
+  }
+
+  // 3. Broadcast to opponent live over WebSocket
+  if (isLocal && msgId) {
+    wsSend({
+      type: 'love_react',
+      msgId: msgId,
+      action: 'add'
+    });
+  }
+}
+
+function removeLoveReact(messageRow, isLocal = true) {
+  if (!messageRow) return;
+  const bubble = messageRow.querySelector('.bubble');
+  if (!bubble) return;
+
+  const badge = bubble.querySelector('.love-react-badge');
+  if (badge) {
+    badge.remove();
+  }
+  bubble.classList.remove('has-react');
+
+  const msgId = messageRow.dataset.msgId;
+  if (isLocal && msgId) {
+    wsSend({
+      type: 'love_react',
+      msgId: msgId,
+      action: 'remove'
+    });
+  }
+}
+
+function createHeartPopBurst(bubble) {
+  if (!bubble) return;
+  const prev = bubble.querySelector('.heart-pop-burst');
+  if (prev) prev.remove();
+
+  const burst = document.createElement('span');
+  burst.className = 'heart-pop-burst';
+  burst.textContent = '❤️';
+  bubble.appendChild(burst);
+
+  burst.addEventListener('animationend', () => {
+    burst.remove();
+  });
+  setTimeout(() => {
+    if (burst.parentNode) burst.remove();
+  }, 750);
+}
+
+function handleRemoteLoveReact(msgId, action) {
+  if (!msgId) return;
+  const row = document.querySelector(`#chatMessages .message-row[data-msg-id="${msgId}"]`);
+  if (!row) return;
+
+  if (action === 'remove') {
+    removeLoveReact(row, false);
+  } else {
+    triggerLoveReact(row, false);
+  }
 }
 
 // ─────────────────────────────────────────────────
@@ -762,13 +896,12 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
     return;
   }
 
+  const assignedId = messageId || ('voice_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
   const durationSec = Math.max(1, Math.round(Number(seconds) || 1));
   const durationText = formatDuration(durationSec);
   const messageRow = document.createElement('div');
   messageRow.className = `message-row ${type}`;
-  if (messageId) {
-    messageRow.dataset.msgId = messageId;
-  }
+  messageRow.dataset.msgId = assignedId;
 
   const bubbleGroup = document.createElement('div');
   bubbleGroup.className = 'bubble-group';
@@ -805,6 +938,8 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
   bubbleGroup.appendChild(bubble);
   messageRow.appendChild(bubbleGroup);
   messageRow.appendChild(timeEl);
+
+  attachDoubleTapReaction(bubble, messageRow);
 
   chatMessages.insertBefore(messageRow, typingIndicator);
   scrollToBottom();
@@ -1119,8 +1254,9 @@ async function startVoiceRecording() {
     reader.onloadend = () => {
       const base64Audio = reader.result;
       const clientTime = formatCurrentTime();
+      const voiceMsgId = 'voice_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
-      appendVoiceMessage(base64Audio, finalDuration, 'outgoing', clientTime, null, waveformContour);
+      appendVoiceMessage(base64Audio, finalDuration, 'outgoing', clientTime, voiceMsgId, waveformContour);
 
       // Sent via live WebSocket & persisted to PHP/DB storage in background
       wsSend({
@@ -1128,7 +1264,8 @@ async function startVoiceRecording() {
         audio: base64Audio,
         duration: finalDuration,
         waveform: waveformContour,
-        time: clientTime
+        time: clientTime,
+        id: voiceMsgId
       });
     };
     reader.readAsDataURL(audioBlob);
