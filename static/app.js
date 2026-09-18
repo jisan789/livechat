@@ -568,12 +568,6 @@ function handleOpponentLiveTyping(text) {
     bubbleGroup.appendChild(bubble);
     currentLiveIncomingRow.appendChild(bubbleGroup);
 
-    // Peaceful live typing cue
-    const hintEl = document.createElement('div');
-    hintEl.className = 'message-time live-typing-hint';
-    hintEl.innerHTML = '<span class="live-dot-pulse"></span><span>typing live</span>';
-    currentLiveIncomingRow.appendChild(hintEl);
-
     chatMessages.insertBefore(currentLiveIncomingRow, typingIndicator);
   }
 
@@ -658,21 +652,15 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
     const bubble = currentLiveIncomingRow.querySelector('.bubble');
     const textNode = currentLiveIncomingRow.querySelector('.streaming-text');
     const cursorNode = currentLiveIncomingRow.querySelector('.streaming-cursor');
-    const hintEl = currentLiveIncomingRow.querySelector('.live-typing-hint');
 
     if (textNode) textNode.textContent = text;
     if (cursorNode) cursorNode.remove();
     if (bubble) bubble.classList.remove('live-typing-bubble');
 
-    if (hintEl) {
-      hintEl.className = 'message-time';
-      hintEl.textContent = timeStr || formatCurrentTime();
-    } else {
-      const timeEl = document.createElement('div');
-      timeEl.className = 'message-time';
-      timeEl.textContent = timeStr || formatCurrentTime();
-      currentLiveIncomingRow.appendChild(timeEl);
-    }
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    timeEl.textContent = timeStr || formatCurrentTime();
+    currentLiveIncomingRow.appendChild(timeEl);
 
     if (messageId) {
       currentLiveIncomingRow.dataset.msgId = messageId;
