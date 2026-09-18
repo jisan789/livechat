@@ -277,6 +277,66 @@ function formatTimeFromIso(isoString) {
   }
 }
 
+function acknowledgeAllSeen(userKey) {
+  if (!userKey || !currentPartner.key) return;
+  wsSend({
+    type: 'seen',
+    all: true,
+    user: userKey,
+    opponent: currentPartner.key
+  });
+  fetch('/api/messages/seen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user: userKey, opponent: currentPartner.key, all: true })
+  }).catch(() => {});
+}
+
+function notifyMessageSeen(messageId) {
+  if (!activeUser || !currentPartner.key || !messageId) return;
+  wsSend({
+    type: 'seen',
+    msg_id: messageId,
+    user: activeUser,
+    opponent: currentPartner.key
+  });
+  fetch('/api/messages/seen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user: activeUser, opponent: currentPartner.key, ids: [messageId] })
+  }).catch(() => {});
+}
+
+function markOutgoingMessagesSeen(targetMsgId = null, ids = null, isAll = false) {
+  if (isAll) {
+    document.querySelectorAll('#chatMessages .message-row.outgoing .seen-dot').forEach(dot => {
+      dot.classList.add('is-seen');
+      dot.setAttribute('title', 'Seen');
+    });
+    return;
+  }
+
+  const idList = ids ? (Array.isArray(ids) ? ids : [ids]) : (targetMsgId ? [targetMsgId] : []);
+  if (idList.length > 0) {
+    idList.forEach(id => {
+      const row = document.querySelector(`#chatMessages .message-row[data-msg-id="${id}"]`) ||
+                  document.querySelector(`#chatMessages .message-row[data-db-id="${id}"]`);
+      if (row && row.classList.contains('outgoing')) {
+        const dot = row.querySelector('.seen-dot');
+        if (dot) {
+          dot.classList.add('is-seen');
+          dot.setAttribute('title', 'Seen');
+        }
+      }
+    });
+  } else {
+    document.querySelectorAll('#chatMessages .message-row.outgoing .seen-dot').forEach(dot => {
+      dot.classList.add('is-seen');
+      dot.setAttribute('title', 'Seen');
+    });
+  }
+}
+
 async function loadChatHistory(userKey) {
   if (!userKey) return;
   try {
@@ -291,21 +351,38 @@ async function loadChatHistory(userKey) {
     });
 
     let appendedAny = false;
+    let hadIncoming = false;
+
     for (const msg of data.messages) {
       const msgIdStr = String(msg.id);
-      if (existingMsgIds.has(msgIdStr)) {
-        continue;
-      }
-
       const isOutgoing = msg.sender === userKey;
       const type = isOutgoing ? 'outgoing' : 'incoming';
       const timeStr = msg.client_time || formatTimeFromIso(msg.created_at);
+      const isSeen = Boolean(msg.seen);
+
+      if (!isOutgoing) {
+        hadIncoming = true;
+      }
+
+      if (existingMsgIds.has(msgIdStr)) {
+        if (isOutgoing && isSeen) {
+          const row = document.querySelector(`#chatMessages .message-row[data-msg-id="${msgIdStr}"]`);
+          if (row) {
+            const dot = row.querySelector('.seen-dot');
+            if (dot) {
+              dot.classList.add('is-seen');
+              dot.setAttribute('title', 'Seen');
+            }
+          }
+        }
+        continue;
+      }
 
       if (msg.msg_type === 'chat') {
-        appendMessage(msg.text_content, type, timeStr, msgIdStr);
+        appendMessage(msg.text_content, type, timeStr, msgIdStr, isSeen);
         appendedAny = true;
       } else if (msg.msg_type === 'voice' && msg.text_content) {
-        appendVoiceMessage(msg.text_content, msg.media_duration || 1, type, timeStr, msgIdStr);
+        appendVoiceMessage(msg.text_content, msg.media_duration || 1, type, timeStr, msgIdStr, null, isSeen);
         appendedAny = true;
       }
       existingMsgIds.add(msgIdStr);
@@ -313,6 +390,11 @@ async function loadChatHistory(userKey) {
 
     if (appendedAny) {
       scrollToBottom();
+    }
+
+    // Since the user is viewing chat history, mark all incoming messages seen
+    if (hadIncoming) {
+      acknowledgeAllSeen(userKey);
     }
   } catch (err) {
     console.warn('[DB] Failed to load chat history:', err);
@@ -440,6 +522,12 @@ function handleWsMessage(msg) {
     // ── Flying Balloon Emoji Reaction ─────────────
     case 'flying_emoji':
       createFlyingBalloon(msg.emoji);
+      break;
+
+    // ── Seen status ───────────────────────────────
+    case 'seen':
+    case 'mark_seen':
+      markOutgoingMessagesSeen(msg.msg_id || msg.id, msg.ids, msg.all);
       break;
 
     // ── Love React (Live show only, zero DB) ───────
@@ -682,11 +770,17 @@ function receiveIncomingMessage(text, timeStr, messageId = null) {
 
     currentLiveIncomingRow = null;
     scrollToBottom();
+    if (activeUser && currentPartner.key) {
+      notifyMessageSeen(assignedId);
+    }
     return;
   }
 
   // Otherwise, append standard incoming message bubble
   appendMessage(text, 'incoming', timeStr, assignedId);
+  if (activeUser && currentPartner.key) {
+    notifyMessageSeen(assignedId);
+  }
 }
 
 // ─────────────────────────────────────────────────
@@ -698,7 +792,7 @@ function handleSend() {
 
   const clientTime = formatCurrentTime();
   const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-  appendMessage(text, 'outgoing', clientTime, msgId);
+  appendMessage(text, 'outgoing', clientTime, msgId, false);
   chatInput.value = '';
   lastLocalTextLength = 0;
   chatInput.dispatchEvent(new Event('input'));
@@ -720,7 +814,7 @@ function handleSend() {
 // ─────────────────────────────────────────────────
 //  Append Message Bubble
 // ─────────────────────────────────────────────────
-function appendMessage(content, type = 'outgoing', timeStr = null, messageId = null) {
+function appendMessage(content, type = 'outgoing', timeStr = null, messageId = null, isSeen = false) {
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
     return;
   }
@@ -735,6 +829,13 @@ function appendMessage(content, type = 'outgoing', timeStr = null, messageId = n
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = content;
+
+  if (type === 'outgoing') {
+    const seenDot = document.createElement('span');
+    seenDot.className = `seen-dot ${isSeen ? 'is-seen' : ''}`;
+    seenDot.setAttribute('title', isSeen ? 'Seen' : 'Sent');
+    bubble.appendChild(seenDot);
+  }
 
   const timeEl = document.createElement('div');
   timeEl.className = 'message-time';
@@ -976,7 +1077,7 @@ const DEFAULT_SPEECH_WAVEFORM = [
 let currentlyPlayingVoiceAudio = null;
 let currentlyPlayingVoiceReset = null;
 
-function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = null, messageId = null, customWaveform = null) {
+function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = null, messageId = null, customWaveform = null, isSeen = false) {
   if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
     return;
   }
@@ -1015,6 +1116,13 @@ function appendVoiceMessage(audioData, seconds, type = 'outgoing', timeStr = nul
       <div class="voice-waveform" title="Click to seek">${barsHtml}</div>
       <span class="voice-duration">${durationText}</span>
     </div>`;
+
+  if (type === 'outgoing') {
+    const seenDot = document.createElement('span');
+    seenDot.className = `seen-dot ${isSeen ? 'is-seen' : ''}`;
+    seenDot.setAttribute('title', isSeen ? 'Seen' : 'Sent');
+    bubble.appendChild(seenDot);
+  }
 
   const timeEl = document.createElement('div');
   timeEl.className = 'message-time';
@@ -1149,6 +1257,10 @@ function receiveIncomingVoice(audioData, duration, timeStr, messageId = null, wa
 
   playOpponentKeypressSound();
   appendVoiceMessage(audioData, duration, 'incoming', timeStr, messageId, waveform);
+
+  if (activeUser && currentPartner.key && messageId) {
+    notifyMessageSeen(messageId);
+  }
 }
 
 // ─────────────────────────────────────────────────

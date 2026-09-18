@@ -519,6 +519,31 @@ body {
   padding: 0 4px;
 }
 
+/* Seen Status Indicator (Tiny vivid green dot at bottom-right corner of outgoing bubble) */
+.seen-dot {
+  position: absolute;
+  bottom: 3px;
+  right: -6px;
+  width: 5.5px;
+  height: 5.5px;
+  border-radius: 50%;
+  background: #22C55E;
+  opacity: 0;
+  transform: scale(0.2);
+  transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.seen-dot.is-seen {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.message-row.incoming .seen-dot {
+  display: none !important;
+}
+
 /* Voice Message Bubble */
 .voice-bubble {
   display: flex;

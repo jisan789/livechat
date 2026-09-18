@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from database import init_db, save_message, get_conversation, clear_messages
+from database import init_db, save_message, get_conversation, clear_messages, mark_messages_seen
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("livechat")
@@ -65,10 +65,25 @@ async def background_save_message(user_key: str, opponent: str, msg_type: str, d
             text_content=content,
             media_duration=data.get("duration"),
             client_time=data.get("time"),
+            seen=False,
         )
         logger.info(f"[DB] Async saved {msg_type} #{saved.get('id')} from {user_key} to {opponent}")
     except Exception as e:
         logger.error(f"[DB] Error saving message in background: {e}")
+
+
+async def background_mark_seen(sender: str, recipient: str, ids: list | None = None):
+    """Persist seen status in background task without blocking."""
+    try:
+        await asyncio.to_thread(
+            mark_messages_seen,
+            sender=sender,
+            recipient=recipient,
+            msg_ids=ids,
+        )
+        logger.info(f"[DB] Async marked messages seen from {sender} to {recipient}")
+    except Exception as e:
+        logger.error(f"[DB] Error marking seen in background: {e}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -124,6 +139,12 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
             if msg_type in ("chat", "voice"):
                 asyncio.create_task(background_save_message(user_key, opponent, msg_type, data))
 
+            # 3. Persist seen status to PHP/DB in background task
+            if msg_type in ("seen", "mark_seen"):
+                ids = data.get("ids") or ([data.get("msg_id")] if data.get("msg_id") else None)
+                is_all = data.get("all", False)
+                asyncio.create_task(background_mark_seen(sender=opponent, recipient=user_key, ids=None if is_all else ids))
+
             logger.debug(f"  {user_key} → {opponent}: {msg_type}")
 
     except WebSocketDisconnect:
@@ -148,6 +169,37 @@ async def get_messages(user_key: str):
     opponent = OPPONENTS[user_key]
     messages = get_conversation(user_key, opponent)
     return JSONResponse({"status": "ok", "user": user_key, "opponent": opponent, "messages": messages})
+
+
+@app.post("/api/messages/seen")
+async def api_mark_seen(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    user_key = body.get("user")
+    opponent = body.get("opponent") or (OPPONENTS.get(user_key) if user_key else None)
+    ids = body.get("ids")
+    is_all = body.get("all", False)
+    if not user_key or user_key not in VALID_USERS or not opponent:
+        return JSONResponse({"status": "error", "message": "Invalid user"}, status_code=400)
+
+    ok = await asyncio.to_thread(
+        mark_messages_seen,
+        sender=opponent,
+        recipient=user_key,
+        msg_ids=None if is_all else ids,
+    )
+
+    if opponent in connections:
+        await safe_send(connections[opponent], {
+            "type": "seen",
+            "from": user_key,
+            "ids": ids,
+            "all": is_all,
+        })
+
+    return JSONResponse({"status": "ok" if ok else "error"})
 
 
 @app.post("/api/messages/clear")

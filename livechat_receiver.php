@@ -70,6 +70,8 @@ function appendMessage($file, $newMsg) {
             $newMsg['created_at'] = gmdate('Y-m-d H:i:s');
         }
 
+        $newMsg['seen'] = isset($newMsg['seen']) ? (bool)$newMsg['seen'] : false;
+
         $messages[] = $newMsg;
 
         // Truncate and write updated JSON
@@ -84,6 +86,66 @@ function appendMessage($file, $newMsg) {
 
     fclose($fp);
     return false;
+}
+
+// Helper: Mark messages as seen with exclusive lock
+function markMessagesAsSeen($file, $sender = null, $recipient = null, $ids = []) {
+    if (!file_exists($file)) return 0;
+    $fp = fopen($file, 'c+');
+    if (!$fp) return 0;
+
+    $updatedCount = 0;
+    if (flock($fp, LOCK_EX)) {
+        $size = filesize($file);
+        $content = $size > 0 ? fread($fp, $size) : '[]';
+        $messages = json_decode($content, true);
+        if (is_array($messages)) {
+            $now = gmdate('Y-m-d H:i:s');
+            $idSet = null;
+            if (!empty($ids)) {
+                $flatIds = is_array($ids) ? $ids : explode(',', (string)$ids);
+                $idSet = array_flip(array_map('strval', $flatIds));
+            }
+
+            foreach ($messages as &$msg) {
+                $mId = isset($msg['id']) ? (string)$msg['id'] : '';
+                $mSender = isset($msg['sender']) ? $msg['sender'] : '';
+                $mRecipient = isset($msg['recipient']) ? $msg['recipient'] : '';
+
+                $match = false;
+                if ($idSet !== null && $mId !== '' && isset($idSet[$mId])) {
+                    $match = true;
+                } elseif ($sender && $recipient) {
+                    if ($mSender === $sender && $mRecipient === $recipient) {
+                        $match = true;
+                    }
+                } elseif ($recipient && !$sender) {
+                    if ($mRecipient === $recipient) {
+                        $match = true;
+                    }
+                } elseif ($idSet === null && !$sender && !$recipient) {
+                    $match = true;
+                }
+
+                if ($match && empty($msg['seen'])) {
+                    $msg['seen'] = true;
+                    $msg['seen_at'] = $now;
+                    $updatedCount++;
+                }
+            }
+            unset($msg);
+
+            if ($updatedCount > 0) {
+                ftruncate($fp, 0);
+                rewind($fp);
+                fwrite($fp, json_encode($messages, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                fflush($fp);
+            }
+        }
+        flock($fp, LOCK_UN);
+    }
+    fclose($fp);
+    return $updatedCount;
 }
 
 // Helper: Save base64 voice note to audio file in /voice/ directory
@@ -219,6 +281,25 @@ if ($method === 'GET' || $action === 'get') {
         $conversation = $allMessages;
     }
 
+    // Ensure seen status exists on every message
+    $totalCount = count($conversation);
+    for ($i = 0; $i < $totalCount; $i++) {
+        if (!isset($conversation[$i]['seen'])) {
+            $s = isset($conversation[$i]['sender']) ? $conversation[$i]['sender'] : '';
+            $r = isset($conversation[$i]['recipient']) ? $conversation[$i]['recipient'] : '';
+            $hasReplyAfter = false;
+            for ($j = $i + 1; $j < $totalCount; $j++) {
+                if (isset($conversation[$j]['sender']) && $conversation[$j]['sender'] === $r) {
+                    $hasReplyAfter = true;
+                    break;
+                }
+            }
+            $conversation[$i]['seen'] = $hasReplyAfter;
+        } else {
+            $conversation[$i]['seen'] = (bool)$conversation[$i]['seen'];
+        }
+    }
+
     echo json_encode([
         'status' => 'ok',
         'count' => count($conversation),
@@ -228,7 +309,31 @@ if ($method === 'GET' || $action === 'get') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 2. POST: Save a new message (chat or voice)
+// 2. SEEN: Mark message(s) as seen
+// Example: POST or GET ?action=seen&sender=jisu&recipient=jenu
+// or POST {"action":"seen","sender":"jisu","recipient":"jenu","ids":[1,2,3]}
+// ─────────────────────────────────────────────────────────────
+if ($action === 'seen' || $action === 'mark_seen') {
+    $input = is_array($jsonBody) ? $jsonBody : $_POST;
+
+    $sender = isset($input['sender']) ? trim($input['sender']) : (isset($_GET['sender']) ? trim($_GET['sender']) : '');
+    $recipient = isset($input['recipient']) ? trim($input['recipient']) : (isset($_GET['recipient']) ? trim($_GET['recipient']) : '');
+    $ids = isset($input['ids']) ? $input['ids'] : (isset($_GET['ids']) ? explode(',', $_GET['ids']) : []);
+    if (isset($input['id']) && $input['id'] !== '') $ids[] = $input['id'];
+    if (isset($_GET['id']) && $_GET['id'] !== '') $ids[] = $_GET['id'];
+
+    $updatedCount = markMessagesAsSeen($dataFile, $sender, $recipient, $ids);
+
+    echo json_encode([
+        'status' => 'ok',
+        'message' => "Marked {$updatedCount} messages as seen",
+        'updated' => $updatedCount
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3. POST: Save a new message (chat or voice)
 // Example: POST JSON body:
 // {"sender":"jisu","recipient":"jenu","msg_type":"chat","text_content":"hello","client_time":"10:30 AM"}
 // or for voice:
@@ -243,6 +348,7 @@ if ($method === 'POST') {
     $textContent = isset($input['text_content']) ? $input['text_content'] : (isset($input['text']) ? $input['text'] : (isset($input['audio']) ? $input['audio'] : null));
     $mediaDuration = isset($input['media_duration']) ? (float)$input['media_duration'] : (isset($input['duration']) ? (float)$input['duration'] : null);
     $clientTime = isset($input['client_time']) ? trim($input['client_time']) : (isset($input['time']) ? trim($input['time']) : '');
+    $seen = isset($input['seen']) ? (bool)$input['seen'] : false;
 
     if (!$sender || !$recipient) {
         http_response_code(400);
@@ -262,6 +368,7 @@ if ($method === 'POST') {
         'text_content' => $textContent,
         'media_duration' => $mediaDuration,
         'client_time' => $clientTime,
+        'seen' => $seen,
     ];
 
     $saved = appendMessage($dataFile, $newRecord);
@@ -285,6 +392,7 @@ echo json_encode([
     'service' => 'LiveChat PHP JSON Storage Receiver',
     'endpoints' => [
         'get_messages' => 'GET ?action=get&user1=jisu&user2=jenu',
+        'mark_seen' => 'POST or GET ?action=seen&sender=jisu&recipient=jenu',
         'save_message' => 'POST with JSON body {sender, recipient, msg_type, text_content, client_time}'
     ]
 ]);
