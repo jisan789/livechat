@@ -1065,8 +1065,12 @@ async function startVoiceRecording() {
   startLiveMicVisualizer(recordStream);
 
   if (recordingTimer) recordingTimer.textContent = '0:00';
-  if (inputNormalContent) inputNormalContent.style.display = 'none';
+  if (inputNormalContent) {
+    inputNormalContent.style.opacity = '0';
+    inputNormalContent.style.pointerEvents = 'none';
+  }
   if (inputRecordingContent) inputRecordingContent.style.display = 'flex';
+  chatInput.focus({ preventScroll: true });
 
   updateActionBtnState();
 
@@ -1113,8 +1117,14 @@ function cancelVoiceRecording() {
 
 function resetRecordingUI() {
   if (inputRecordingContent) inputRecordingContent.style.display = 'none';
-  if (inputNormalContent) inputNormalContent.style.display = 'flex';
+  if (inputNormalContent) {
+    inputNormalContent.style.opacity = '1';
+    inputNormalContent.style.pointerEvents = 'auto';
+  }
   updateActionBtnState();
+  chatInput.focus({ preventScroll: true });
+  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
+  setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
 }
 
 function updateActionBtnState() {
@@ -1235,18 +1245,14 @@ function setupEventListeners() {
   });
 
   // Action button handling (Mic by default, Send when text entered, Stop/Send when recording)
-  let lastTouchSendTime = 0;
+  let lastTouchActionTime = 0;
 
   actionBtn.addEventListener('pointerdown', (e) => {
-    if (chatInput.value.trim()) {
-      e.preventDefault();
-    }
+    e.preventDefault();
   });
 
   actionBtn.addEventListener('mousedown', (e) => {
-    if (chatInput.value.trim()) {
-      e.preventDefault();
-    }
+    e.preventDefault();
   });
 
   function handleActionBtnTrigger() {
@@ -1257,18 +1263,19 @@ function setupEventListeners() {
     } else {
       startVoiceRecording();
     }
+    chatInput.focus({ preventScroll: true });
+    setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
+    setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
   }
 
   actionBtn.addEventListener('touchstart', (e) => {
-    if (chatInput.value.trim()) {
-      e.preventDefault();
-      lastTouchSendTime = Date.now();
-      executeSend();
-    }
+    e.preventDefault();
+    lastTouchActionTime = Date.now();
+    handleActionBtnTrigger();
   }, { passive: false });
 
   actionBtn.addEventListener('click', (e) => {
-    if (Date.now() - lastTouchSendTime < 500) {
+    if (Date.now() - lastTouchActionTime < 500) {
       return; // Already handled by touchstart
     }
     handleActionBtnTrigger();
@@ -1276,9 +1283,19 @@ function setupEventListeners() {
 
   // Cancel voice recording
   if (cancelRecordBtn) {
+    cancelRecordBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+    cancelRecordBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    cancelRecordBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelVoiceRecording();
+      chatInput.focus({ preventScroll: true });
+    }, { passive: false });
+
     cancelRecordBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       cancelVoiceRecording();
+      chatInput.focus({ preventScroll: true });
     });
   }
 
@@ -1305,20 +1322,54 @@ function setupEventListeners() {
     });
   }
 
-  // Emoji
+  // Emoji — prevent stealing focus so mobile keyboard does not close
+  function insertEmoji(emojiChar) {
+    const start = chatInput.selectionStart ?? chatInput.value.length;
+    const end = chatInput.selectionEnd ?? chatInput.value.length;
+    const val = chatInput.value;
+    chatInput.value = val.substring(0, start) + emojiChar + val.substring(end);
+    chatInput.selectionStart = chatInput.selectionEnd = start + emojiChar.length;
+    chatInput.dispatchEvent(new Event('input'));
+    chatInput.focus({ preventScroll: true });
+    setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 10);
+    setTimeout(() => { chatInput.focus({ preventScroll: true }); }, 50);
+  }
+
   if (emojiBtn) {
+    emojiBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+    emojiBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    emojiBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      emojiPopover.classList.toggle('show');
+      chatInput.focus({ preventScroll: true });
+    }, { passive: false });
+
     emojiBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       emojiPopover.classList.toggle('show');
+      chatInput.focus({ preventScroll: true });
     });
+  }
+
+  if (emojiPopover) {
+    emojiPopover.addEventListener('pointerdown', (e) => e.preventDefault());
+    emojiPopover.addEventListener('mousedown', (e) => e.preventDefault());
+    emojiPopover.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
     document.querySelectorAll('.emoji-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        chatInput.value += btn.textContent;
-        chatInput.dispatchEvent(new Event('input'));
-        emojiPopover.classList.remove('show');
-        chatInput.focus();
+      btn.addEventListener('pointerdown', (e) => e.preventDefault());
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        insertEmoji(btn.textContent);
+      }, { passive: false });
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        insertEmoji(btn.textContent);
       });
     });
+
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#emojiPopover') && !e.target.closest('#emojiBtn')) {
         emojiPopover.classList.remove('show');
@@ -1347,7 +1398,6 @@ function setupKeyboardUIHandling() {
   }
   chatInput.addEventListener('focus', () => {
     inputPill.classList.add('focused');
-    emojiPopover.classList.remove('show');
     setTimeout(scrollToBottom, 250);
   });
   chatInput.addEventListener('blur', () => inputPill.classList.remove('focused'));

@@ -623,6 +623,7 @@ body {
   align-items: center;
   width: 100%;
   gap: 8px;
+  transition: opacity 0.15s ease;
 }
 
 .input-icon-btn {
@@ -705,6 +706,12 @@ body {
 /* Live Voice Recording UI inside Input Pill */
 .input-recording-content {
   display: none;
+  position: absolute;
+  inset: 0;
+  padding: 0 14px;
+  background: #FFFFFF;
+  border-radius: 26px;
+  z-index: 5;
   align-items: center;
   justify-content: space-between;
   width: 100%;
