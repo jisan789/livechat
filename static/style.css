@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Color+Emoji&display=swap');
 
 :root {
   --bg-main: #F7F7F8;
@@ -829,11 +829,16 @@ body {
 .emoji-btn {
   background: none;
   border: none;
-  font-size: 20px;
+  font-size: 21px;
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   padding: 6px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease;
+  line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .emoji-btn:hover {
@@ -1107,6 +1112,7 @@ body {
 .balloon-emoji {
   font-size: var(--balloon-size, 38px);
   line-height: 1;
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   display: inline-block;
   transform-origin: center bottom;
   filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.18));
