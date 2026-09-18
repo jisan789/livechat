@@ -433,7 +433,6 @@ function handleWsMessage(msg) {
     // ── Flying Balloon Emoji Reaction ─────────────
     case 'flying_emoji':
       createFlyingBalloon(msg.emoji);
-      playOpponentKeypressSound();
       break;
   }
 }
@@ -1668,10 +1667,7 @@ function sendFlyingEmojiBalloon(emojiChar) {
   // 1. Instantly trigger floating balloons on own chat inbox
   createFlyingBalloon(emojiChar);
 
-  // 2. Play subtle tap sound
-  playKeypressSound();
-
-  // 3. Broadcast to opponent via live WebSocket (zero server delay)
+  // 2. Broadcast to opponent via live WebSocket (zero server delay)
   wsSend({
     type: 'flying_emoji',
     emoji: emojiChar
