@@ -913,15 +913,16 @@ body {
 
 .input-pill {
   flex: 1;
+  min-width: 0;
   height: 48px;
   display: flex;
   align-items: center;
   background: #FFFFFF;
   border: 1px solid var(--border-light);
   border-radius: 26px;
-  padding: 0 14px;
+  padding: 0 8px 0 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-  gap: 8px;
+  gap: 6px;
   position: relative;
   overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -936,7 +937,8 @@ body {
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 8px;
+  min-width: 0;
+  gap: 6px;
   transition: opacity 0.15s ease;
 }
 
@@ -953,6 +955,8 @@ body {
   border-radius: 50%;
   transition: all 0.15s ease;
   flex-shrink: 0;
+  width: 32px;
+  height: 32px;
 }
 
 .input-icon-btn:hover {
@@ -962,7 +966,9 @@ body {
 
 /* 16px font prevents iOS Safari auto-zoom on input focus */
 .chat-input {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
   border: none;
   outline: none;
   background: transparent;
@@ -1126,18 +1132,67 @@ body {
   left: 18px;
   background: #FFFFFF;
   border-radius: 18px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
   border: 1px solid var(--border-light);
-  padding: 12px;
+  padding: 10px 12px;
   display: none;
-  grid-template-columns: repeat(6, 1fr);
+  flex-direction: column;
   gap: 8px;
   z-index: 50;
   animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: calc(100% - 36px);
 }
 
 .emoji-popover.show {
+  display: flex;
+}
+
+.emoji-popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.emoji-popover-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #F3F4F6;
+  color: #374151;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.emoji-popover-action-btn:hover {
+  background: #E5E7EB;
+  color: #111827;
+}
+
+.emoji-popover-action-btn:active {
+  transform: scale(0.97);
+  background: #D1D5DB;
+}
+
+.emoji-popover-action-btn svg {
+  flex-shrink: 0;
+}
+
+.emoji-grid {
   display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
 }
 
 .emoji-btn {

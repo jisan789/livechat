@@ -22,6 +22,7 @@ const inputRecordingContent = document.getElementById('inputRecordingContent');
 const recordingTimer        = document.getElementById('recordingTimer');
 const cancelRecordBtn       = document.getElementById('cancelRecordBtn');
 const imageBtn              = document.getElementById('imageBtn');
+const emojiImageBtn         = document.getElementById('emojiImageBtn');
 const imageFileInput        = document.getElementById('imageFileInput');
 const imageLightbox         = document.getElementById('imageLightbox');
 const lightboxImage         = document.getElementById('lightboxImage');
@@ -2041,6 +2042,23 @@ function setupEventListeners() {
       btn.addEventListener('click', handleEmojiClick);
     });
 
+    // Option inside emoji bar to choose and send photo
+    const emojiImgBtn = emojiImageBtn || document.getElementById('emojiImageBtn');
+    if (emojiImgBtn) {
+      const handleEmojiImgTrigger = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        emojiPopover.classList.remove('show');
+        if (imageFileInput) {
+          imageFileInput.click();
+        }
+      };
+      emojiImgBtn.addEventListener('touchstart', handleEmojiImgTrigger, { passive: false });
+      emojiImgBtn.addEventListener('click', handleEmojiImgTrigger);
+    }
+
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#emojiPopover') && !e.target.closest('#emojiBtn')) {
         if (Date.now() - lastEmojiBtnTouchTime < 400) return;
@@ -2100,9 +2118,23 @@ function setupEventListeners() {
 
   // ── Image Attachment & Upload Event Handlers ──
   if (imageBtn && imageFileInput) {
-    imageBtn.addEventListener('click', (e) => {
-      e.preventDefault();
+    let lastImageBtnTouchTime = 0;
+    const triggerImagePicker = (e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       imageFileInput.click();
+    };
+
+    imageBtn.addEventListener('touchstart', (e) => {
+      lastImageBtnTouchTime = Date.now();
+      triggerImagePicker(e);
+    }, { passive: false });
+
+    imageBtn.addEventListener('click', (e) => {
+      if (Date.now() - lastImageBtnTouchTime < 400) return;
+      triggerImagePicker(e);
     });
 
     imageFileInput.addEventListener('change', (e) => {
