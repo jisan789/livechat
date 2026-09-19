@@ -920,9 +920,9 @@ body {
   background: #FFFFFF;
   border: 1px solid var(--border-light);
   border-radius: 26px;
-  padding: 0 8px 0 12px;
+  padding: 0 16px 0 10px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-  gap: 6px;
+  gap: 8px;
   position: relative;
   overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;

@@ -2117,6 +2117,16 @@ function setupEventListeners() {
   }
 
   // ── Image Attachment & Upload Event Handlers ──
+  if (imageFileInput) {
+    imageFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        handleSendImage(file);
+      }
+      imageFileInput.value = '';
+    });
+  }
+
   if (imageBtn && imageFileInput) {
     let lastImageBtnTouchTime = 0;
     const triggerImagePicker = (e) => {
@@ -2135,14 +2145,6 @@ function setupEventListeners() {
     imageBtn.addEventListener('click', (e) => {
       if (Date.now() - lastImageBtnTouchTime < 400) return;
       triggerImagePicker(e);
-    });
-
-    imageFileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) {
-        handleSendImage(file);
-      }
-      imageFileInput.value = '';
     });
   }
 
