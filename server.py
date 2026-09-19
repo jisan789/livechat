@@ -56,7 +56,12 @@ async def notify_opponent(user_key: str, payload: dict):
 async def background_save_message(user_key: str, opponent: str, msg_type: str, data: dict):
     """Save message in the background without blocking real-time WebSocket communication."""
     try:
-        content = data.get("text") if msg_type == "chat" else data.get("audio")
+        if msg_type == "chat":
+            content = data.get("text")
+        elif msg_type == "image":
+            content = data.get("image")
+        else:
+            content = data.get("audio")
         saved = await asyncio.to_thread(
             save_message,
             sender=user_key,
@@ -135,8 +140,8 @@ async def websocket_endpoint(websocket: WebSocket, user_key: str):
             data["from"] = user_key
             await notify_opponent(user_key, data)
 
-            # 2. Persist chat & voice messages to PHP/DB in background task without blocking live chat.
-            if msg_type in ("chat", "voice"):
+            # 2. Persist chat, voice & image messages to PHP/DB in background task without blocking live chat.
+            if msg_type in ("chat", "voice", "image"):
                 asyncio.create_task(background_save_message(user_key, opponent, msg_type, data))
 
             # 3. Persist seen status to PHP/DB in background task

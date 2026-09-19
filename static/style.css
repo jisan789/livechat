@@ -567,6 +567,62 @@ body {
   display: none !important;
 }
 
+/* Image Message Bubble */
+.bubble.image-bubble {
+  padding: 3.5px;
+  background: #FFFFFF;
+  box-shadow: var(--bubble-shadow);
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+  max-width: 250px;
+}
+
+.message-row.outgoing .bubble.image-bubble {
+  background: #111827;
+  border-radius: 18px 18px 5px 18px;
+  padding: 3.5px;
+}
+
+.message-row.incoming .bubble.image-bubble {
+  background: #FFFFFF;
+  border-radius: 18px 18px 18px 5px;
+  padding: 3.5px;
+}
+
+.image-container {
+  position: relative;
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chat-image-preview {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 14px;
+  transition: transform 0.22s ease, opacity 0.2s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chat-image-preview:hover {
+  transform: scale(1.02);
+}
+
+/* Green seen dot inside image bubble */
+.bubble.image-bubble .seen-dot {
+  bottom: 8px;
+  right: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
+}
+
 /* Voice Message Bubble */
 .voice-bubble {
   display: flex;
@@ -1431,4 +1487,88 @@ body {
     transform: rotate(12deg);
   }
 }
+
+/* Fullscreen Image Lightbox Modal */
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: lightboxFadeIn 0.22s ease-out forwards;
+}
+
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.lightbox-close-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1010;
+  transition: background 0.18s ease, transform 0.15s ease;
+}
+
+.lightbox-close-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(1.08);
+}
+
+.lightbox-close-btn:active {
+  transform: scale(0.92);
+}
+
+.lightbox-content {
+  position: relative;
+  z-index: 1005;
+  max-width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox-img {
+  max-width: 92vw;
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  animation: lightboxZoomIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@keyframes lightboxFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes lightboxZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 

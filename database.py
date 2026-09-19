@@ -88,6 +88,7 @@ def save_message(
         "msg_type": msg_type,
         "text_content": text_content,
         "audio": text_content if msg_type == "voice" else None,
+        "image": text_content if msg_type == "image" else None,
         "media_duration": media_duration,
         "client_time": client_time,
         "seen": seen,

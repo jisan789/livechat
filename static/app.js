@@ -21,6 +21,12 @@ const inputNormalContent = document.getElementById('inputNormalContent');
 const inputRecordingContent = document.getElementById('inputRecordingContent');
 const recordingTimer        = document.getElementById('recordingTimer');
 const cancelRecordBtn       = document.getElementById('cancelRecordBtn');
+const imageBtn              = document.getElementById('imageBtn');
+const imageFileInput        = document.getElementById('imageFileInput');
+const imageLightbox         = document.getElementById('imageLightbox');
+const lightboxImage         = document.getElementById('lightboxImage');
+const lightboxCloseBtn      = document.getElementById('lightboxCloseBtn');
+const lightboxBackdrop      = document.getElementById('lightboxBackdrop');
 
 const soundToggleBtn     = document.getElementById('soundToggleBtn');
 const clearChatBtn       = document.getElementById('clearChatBtn');
@@ -384,6 +390,9 @@ async function loadChatHistory(userKey) {
       } else if (msg.msg_type === 'voice' && msg.text_content) {
         appendVoiceMessage(msg.text_content, msg.media_duration || 1, type, timeStr, msgIdStr, null, isSeen);
         appendedAny = true;
+      } else if (msg.msg_type === 'image' && msg.text_content) {
+        appendImageMessage(msg.text_content, type, timeStr, msgIdStr, isSeen);
+        appendedAny = true;
       }
       existingMsgIds.add(msgIdStr);
     }
@@ -497,6 +506,11 @@ function handleWsMessage(msg) {
     // ── Voice note (Live WebSocket) ───────────────
     case 'voice':
       receiveIncomingVoice(msg.audio, msg.duration, msg.time, msg.id, msg.waveform);
+      break;
+
+    // ── Image message (Live WebSocket) ────────────
+    case 'image':
+      receiveIncomingImage(msg.image, msg.time, msg.id);
       break;
 
     // ── Chat cleared ──────────────────────────────
@@ -1271,6 +1285,160 @@ function receiveIncomingVoice(audioData, duration, timeStr, messageId = null, wa
 }
 
 // ─────────────────────────────────────────────────
+//  Image Handling & Fullscreen Lightbox
+// ─────────────────────────────────────────────────
+function openImageLightbox(src) {
+  if (!imageLightbox || !lightboxImage || !src) return;
+  lightboxImage.src = src;
+  imageLightbox.style.display = 'flex';
+  imageLightbox.setAttribute('aria-hidden', 'false');
+}
+
+function closeImageLightbox() {
+  if (!imageLightbox) return;
+  imageLightbox.style.display = 'none';
+  imageLightbox.setAttribute('aria-hidden', 'true');
+  if (lightboxImage) lightboxImage.src = '';
+}
+
+function compressImage(file, maxDimension = 1280, quality = 0.84) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let dataUrl = canvas.toDataURL('image/webp', quality);
+        if (!dataUrl.startsWith('data:image/webp')) {
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(dataUrl);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleSendImage(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('Please select an image file', 'error');
+    return;
+  }
+
+  try {
+    showToast('Sending photo...', 'info');
+    const compressedDataUrl = await compressImage(file);
+    const clientTime = formatCurrentTime();
+    const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+    // 1. Render in sender's own chat
+    appendImageMessage(compressedDataUrl, 'outgoing', clientTime, msgId, false);
+
+    // 2. Broadcast via WebSocket (Zero Latency)
+    const sent = wsSend({
+      type: 'image',
+      image: compressedDataUrl,
+      time: clientTime,
+      id: msgId
+    });
+
+    if (!sent) {
+      showToast('Saved — will sync when connected', 'info');
+    }
+  } catch (err) {
+    console.error('[Image] Failed to process image:', err);
+    showToast('Failed to send image', 'error');
+  }
+}
+
+function appendImageMessage(imageUrl, type = 'outgoing', timeStr = null, messageId = null, isSeen = false) {
+  if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
+    return;
+  }
+  const assignedId = messageId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+  const messageRow = document.createElement('div');
+  messageRow.className = `message-row ${type}`;
+  messageRow.dataset.msgId = assignedId;
+
+  const bubbleGroup = document.createElement('div');
+  bubbleGroup.className = 'bubble-group';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble image-bubble';
+
+  const container = document.createElement('div');
+  container.className = 'image-container';
+
+  const img = document.createElement('img');
+  img.className = 'chat-image-preview';
+  img.src = imageUrl;
+  img.alt = 'Shared photo';
+  img.loading = 'lazy';
+
+  img.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openImageLightbox(imageUrl);
+  });
+
+  container.appendChild(img);
+  bubble.appendChild(container);
+
+  if (type === 'outgoing') {
+    const seenDot = document.createElement('span');
+    seenDot.className = `seen-dot ${isSeen ? 'is-seen' : ''}`;
+    seenDot.setAttribute('title', isSeen ? 'Seen' : 'Sent');
+    bubble.appendChild(seenDot);
+  }
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'message-time';
+  timeEl.textContent = timeStr || formatCurrentTime();
+
+  attachDoubleTapReaction(bubble, messageRow);
+
+  bubbleGroup.appendChild(bubble);
+  messageRow.appendChild(bubbleGroup);
+  messageRow.appendChild(timeEl);
+
+  chatMessages.insertBefore(messageRow, typingIndicator);
+  scrollToBottom();
+}
+
+function receiveIncomingImage(imageUrl, timeStr, messageId = null) {
+  hideOpponentTyping();
+
+  if (messageId && document.querySelector(`#chatMessages .message-row[data-msg-id="${messageId}"]`)) {
+    return;
+  }
+
+  const assignedId = messageId || ('msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+  playOpponentKeypressSound();
+  appendImageMessage(imageUrl, 'incoming', timeStr, assignedId);
+
+  if (activeUser && currentPartner.key) {
+    notifyMessageSeen(assignedId);
+  }
+}
+
+// ─────────────────────────────────────────────────
 //  Voice Recording (MediaRecorder & Live WebSocket)
 // ─────────────────────────────────────────────────
 let mediaRecorder = null;
@@ -1899,10 +2067,11 @@ function setupEventListeners() {
         return;
       }
 
-      // Ignore clicks on specific interactive controls (voice play/seek, love react badge)
+      // Ignore clicks on specific interactive controls (voice play/seek, love react badge, photo preview)
       if (e.target.closest('.voice-play-btn') || 
           e.target.closest('.voice-waveform') || 
-          e.target.closest('.love-react-badge')) {
+          e.target.closest('.love-react-badge') ||
+          e.target.closest('.chat-image-preview')) {
         return;
       }
 
@@ -1928,6 +2097,67 @@ function setupEventListeners() {
       }
     });
   }
+
+  // ── Image Attachment & Upload Event Handlers ──
+  if (imageBtn && imageFileInput) {
+    imageBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      imageFileInput.click();
+    });
+
+    imageFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        handleSendImage(file);
+      }
+      imageFileInput.value = '';
+    });
+  }
+
+  // Drag and drop photo onto chat app
+  if (chatApp) {
+    chatApp.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    chatApp.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+          handleSendImage(file);
+        }
+      }
+    });
+  }
+
+  // Paste image directly from clipboard (Ctrl+V or mobile paste)
+  window.addEventListener('paste', (e) => {
+    if (e.clipboardData && e.clipboardData.items) {
+      for (const item of e.clipboardData.items) {
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleSendImage(file);
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  // Lightbox close interactions
+  if (lightboxCloseBtn) {
+    lightboxCloseBtn.addEventListener('click', closeImageLightbox);
+  }
+  if (lightboxBackdrop) {
+    lightboxBackdrop.addEventListener('click', closeImageLightbox);
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && imageLightbox && imageLightbox.style.display !== 'none') {
+      closeImageLightbox();
+    }
+  });
 
   // Set initial action button mode (Mic by default)
   updateActionBtnState();

@@ -213,6 +213,71 @@ function saveVoiceAudioFile($dataUrlOrBase64) {
     return $dataUrlOrBase64;
 }
 
+// Helper: Save base64 image to image file in /images/ directory
+function saveImageFile($dataUrlOrBase64) {
+    if (empty($dataUrlOrBase64)) return null;
+
+    $ext = 'jpg';
+    $binary = null;
+
+    // Check if Data URL: data:image/(jpeg|png|webp|gif|svg+xml);base64,...
+    if (preg_match('/^data:image\/([a-zA-Z0-9_\-\+]+)(?:;[a-zA-Z0-9_\-=]+)*;base64,(.+)$/s', $dataUrlOrBase64, $matches)) {
+        $mime = strtolower($matches[1]);
+        if (strpos($mime, 'png') !== false) {
+            $ext = 'png';
+        } elseif (strpos($mime, 'webp') !== false) {
+            $ext = 'webp';
+        } elseif (strpos($mime, 'gif') !== false) {
+            $ext = 'gif';
+        } elseif (strpos($mime, 'svg') !== false) {
+            $ext = 'svg';
+        } else {
+            $ext = 'jpg';
+        }
+        $binary = base64_decode($matches[2]);
+    } else {
+        // Raw base64 string
+        $decoded = base64_decode($dataUrlOrBase64, true);
+        if ($decoded !== false && strlen($decoded) > 50) {
+            $binary = $decoded;
+            $ext = 'jpg';
+        }
+    }
+
+    if (!$binary) {
+        // If it's already a URL or cannot be decoded as base64, return as-is
+        return $dataUrlOrBase64;
+    }
+
+    $imagesDir = __DIR__ . '/images';
+    if (!is_dir($imagesDir)) {
+        @mkdir($imagesDir, 0755, true);
+    }
+
+    // Generate unique safe file name
+    $fileName = 'img_' . time() . '_' . substr(md5(uniqid(mt_rand(), true)), 0, 8) . '.' . $ext;
+    $filePath = $imagesDir . '/' . $fileName;
+
+    if (@file_put_contents($filePath, $binary) !== false) {
+        // Determine base URL dynamically
+        $isHttps = (
+            (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
+            (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
+            (!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
+        );
+        $scheme = $isHttps ? 'https' : 'http';
+        $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : '');
+        $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+
+        if ($host) {
+            return "{$scheme}://{$host}{$scriptDir}/images/{$fileName}";
+        }
+    }
+
+    // If writing file failed (e.g. read-only host), return original string to persist in JSON
+    return $dataUrlOrBase64;
+}
+
 // Determine Action and Method
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? strtolower(trim($_GET['action'])) : '';
@@ -240,7 +305,7 @@ if ($action === 'clear' || $action === 'empty') {
         flock($fp, LOCK_UN);
         fclose($fp);
 
-        // Also clean up any saved voice files
+        // Also clean up any saved voice and image files
         $voiceDir = __DIR__ . '/voice';
         if (is_dir($voiceDir)) {
             $files = glob($voiceDir . '/*');
@@ -250,10 +315,19 @@ if ($action === 'clear' || $action === 'empty') {
                 }
             }
         }
+        $imagesDir = __DIR__ . '/images';
+        if (is_dir($imagesDir)) {
+            $files = glob($imagesDir . '/*');
+            if (is_array($files)) {
+                foreach ($files as $f) {
+                    if (is_file($f)) @unlink($f);
+                }
+            }
+        }
 
         echo json_encode([
             'status' => 'ok',
-            'message' => 'All messages and voice notes cleared successfully'
+            'message' => 'All messages, voice notes, and images cleared successfully'
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -359,6 +433,10 @@ if ($method === 'POST') {
     // For voice messages: save audio binary to /voice/ folder and convert to static URL
     if ($msgType === 'voice' && !empty($textContent)) {
         $textContent = saveVoiceAudioFile($textContent);
+    }
+    // For image messages: save image binary to /images/ folder and convert to static URL
+    if ($msgType === 'image' && !empty($textContent)) {
+        $textContent = saveImageFile($textContent);
     }
 
     $newRecord = [
