@@ -1,18 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Color+Emoji&display=swap');
 
 :root {
-  --bg-main: #F7F7F8;
+  --bg-main: #F8FAFC;
   --bg-card: #FFFFFF;
-  --text-primary: #111827;
-  --text-secondary: #8E95A2;
-  --text-muted: #9CA3AF;
-  --border-light: #E5E7EB;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --border-light: rgba(226, 232, 240, 0.85);
   --bubble-bg: #FFFFFF;
-  --bubble-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  --action-btn-border: #E5E7EB;
-  --action-btn-hover: #F3F4F6;
-  --accent-color: #111827;
-  --typing-color: #059669;
+  --bubble-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --action-btn-border: rgba(226, 232, 240, 0.9);
+  --action-btn-hover: #F1F5F9;
+  --accent-color: #6366F1;
+  --typing-color: #4F46E5;
   --danger-color: #EF4444;
 }
 
@@ -34,11 +34,13 @@ html, body {
 
 body {
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background-color: #ECEEF2;
+  background: radial-gradient(circle at 50% 10%, #F1F5F9 0%, #E2E8F0 100%);
   color: var(--text-primary);
   display: flex;
   justify-content: center;
   align-items: center;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Main Chat Application Container */
@@ -52,7 +54,8 @@ body {
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.08);
+  border-radius: 28px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 20px 50px -12px rgba(15, 23, 42, 0.14), 0 8px 24px -4px rgba(15, 23, 42, 0.06);
   transition: height 0.15s ease-out;
 }
 
@@ -62,6 +65,7 @@ body {
   }
   .chat-app {
     max-width: 100%;
+    border-radius: 0;
     box-shadow: none;
   }
 }
@@ -72,7 +76,7 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.32;
+  opacity: 0.18;
 }
 
 .background-watermark svg {
@@ -88,7 +92,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.75);
   flex-shrink: 0;
 }
 
@@ -131,7 +138,7 @@ body {
   object-fit: cover;
   background: #E2E8F0;
   display: block;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
 }
 
@@ -147,11 +154,18 @@ body {
   position: absolute;
   bottom: 1px;
   right: 1px;
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   background: #22C55E;
   border: 2px solid #FFFFFF;
   border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+  animation: presencePulse 3s infinite ease-in-out;
+}
+
+@keyframes presencePulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3); }
+  50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
 }
 
 .user-info {
@@ -162,11 +176,11 @@ body {
 }
 
 .user-name {
-  font-size: 18px;
+  font-size: 17.5px;
   font-weight: 700;
-  color: #111827;
+  color: #0F172A;
   line-height: 1.25;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.35px;
 }
 
 .user-status {
@@ -194,30 +208,31 @@ body {
 }
 
 .action-icon-btn {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--action-btn-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1F2937;
+  color: #1E293B;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .action-icon-btn.muted {
-  color: #9CA3AF;
-  background: #F9FAFB;
-  border-color: #E5E7EB;
+  color: #94A3B8;
+  background: rgba(248, 250, 252, 0.9);
+  border-color: rgba(226, 232, 240, 0.9);
 }
 
 .action-icon-btn:hover {
-  background: var(--action-btn-hover);
-  border-color: #D1D5DB;
-  transform: translateY(-1px);
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 .action-icon-btn:active {
@@ -315,11 +330,18 @@ body {
 /* Date Divider */
 .date-divider {
   align-self: center;
-  margin: 6px 0 8px 0;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: -0.1px;
+  margin: 10px 0 12px 0;
+  padding: 3.5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748B;
+  background: rgba(241, 245, 249, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: 99px;
+  letter-spacing: 0.25px;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 /* Message Rows */
@@ -487,11 +509,23 @@ body {
 
 /* Match the exact shapes from mockup */
 .message-row.outgoing .bubble {
+  background: linear-gradient(135deg, #18181B 0%, #27272A 100%);
+  color: #F8FAFC;
   border-radius: 18px 18px 5px 18px;
-  padding-right: 18px;
+  padding-right: 20px;
+  box-shadow: 0 3px 10px -2px rgba(15, 23, 42, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.message-row.outgoing .bubble ::selection {
+  background: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
 }
 
 .message-row.incoming .bubble {
+  background: #FFFFFF;
+  color: #0F172A;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.05);
   border-radius: 18px 18px 18px 5px;
 }
 
@@ -546,11 +580,12 @@ body {
 .seen-dot {
   position: absolute;
   bottom: 4px;
-  right: 5px;
-  width: 5.5px;
-  height: 5.5px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #22C55E;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.85);
   opacity: 0;
   transform: scale(0.2);
   transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -898,7 +933,10 @@ body {
   position: relative;
   z-index: 10;
   padding: 10px 18px calc(14px + env(safe-area-inset-bottom, 0px)) 18px;
-  background: var(--bg-main);
+  background: rgba(248, 250, 252, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
   flex-shrink: 0;
   transition: padding-bottom 0.15s ease-out;
 }
@@ -918,19 +956,20 @@ body {
   display: flex;
   align-items: center;
   background: #FFFFFF;
-  border: 1px solid var(--border-light);
+  border: 1px solid rgba(203, 213, 225, 0.85);
   border-radius: 26px;
   padding: 0 16px 0 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.04);
   gap: 8px;
   position: relative;
   overflow: hidden;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.input-pill:focus-within,
 .input-pill.focused {
-  border-color: #94A3B8;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-color: #6366F1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14), 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .input-normal-content {
@@ -951,17 +990,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9CA3AF;
+  color: #94A3B8;
   border-radius: 50%;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   flex-shrink: 0;
   width: 32px;
   height: 32px;
 }
 
 .input-icon-btn:hover {
-  color: #4B5563;
-  transform: scale(1.08);
+  color: #4F46E5;
+  transform: rotate(12deg) scale(1.12);
 }
 
 /* 16px font prevents iOS Safari auto-zoom on input focus */
@@ -973,16 +1012,16 @@ body {
   outline: none;
   background: transparent;
   font-family: inherit;
-  font-size: 16px;
-  color: #111827;
+  font-size: 15.5px;
+  color: #0F172A;
   font-weight: 500;
   padding: 6px 2px;
 }
 
 .chat-input::placeholder {
-  color: #9CA3AF;
+  color: #94A3B8;
   font-weight: 400;
-  font-size: 15px;
+  font-size: 14.5px;
 }
 
 .input-actions-right {
@@ -997,26 +1036,26 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #111827;
+  background: linear-gradient(135deg, #18181B 0%, #27272A 100%);
   color: #FFFFFF;
-  border: 1px solid #111827;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.25);
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   flex-shrink: 0;
 }
 
 .send-btn:hover, .mic-btn:hover {
-  background: #1F2937;
-  border-color: #1F2937;
-  transform: scale(1.05);
+  background: linear-gradient(135deg, #27272A 0%, #3F3F46 100%);
+  transform: scale(1.06);
+  box-shadow: 0 6px 18px -2px rgba(15, 23, 42, 0.32);
 }
 
 .send-btn:active, .mic-btn:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
 .send-btn svg, .mic-btn svg {
@@ -1128,18 +1167,20 @@ body {
 /* Emoji Picker Dropdown Modal */
 .emoji-popover {
   position: absolute;
-  bottom: 74px;
+  bottom: 76px;
   left: 18px;
-  background: #FFFFFF;
-  border-radius: 18px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
-  border: 1px solid var(--border-light);
-  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 20px;
+  box-shadow: 0 16px 40px -8px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  padding: 12px 14px;
   display: none;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   z-index: 50;
-  animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: popIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   max-width: calc(100% - 36px);
 }
 
@@ -1151,7 +1192,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -1160,15 +1201,15 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: #F3F4F6;
-  color: #374151;
+  background: #F1F5F9;
+  color: #1E293B;
   font-size: 13.5px;
   font-weight: 600;
   border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: 12px;
   padding: 8px 14px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
   touch-action: manipulation;
   user-select: none;
@@ -1176,13 +1217,14 @@ body {
 }
 
 .emoji-popover-action-btn:hover {
-  background: #E5E7EB;
-  color: #111827;
+  background: #E2E8F0;
+  color: #0F172A;
+  transform: translateY(-1px);
 }
 
 .emoji-popover-action-btn:active {
   transform: scale(0.97);
-  background: #D1D5DB;
+  background: #CBD5E1;
 }
 
 .emoji-popover-action-btn svg {
@@ -1198,12 +1240,12 @@ body {
 .emoji-btn {
   background: none;
   border: none;
-  font-size: 21px;
+  font-size: 22px;
   font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   padding: 6px;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s ease;
   line-height: 1.1;
   display: inline-flex;
   align-items: center;
@@ -1211,7 +1253,12 @@ body {
 }
 
 .emoji-btn:hover {
-  background: #F3F4F6;
+  background: rgba(241, 245, 249, 0.85);
+  transform: scale(1.22);
+}
+
+.emoji-btn:active {
+  transform: scale(0.9);
 }
 
 @keyframes popIn {
@@ -1226,9 +1273,9 @@ body {
   position: absolute;
   inset: 0;
   z-index: 200;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(248, 250, 252, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1261,24 +1308,24 @@ body {
 }
 
 .pin-lock-icon {
-  width: 58px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
-  background: #F3F4F6;
-  border: 1px solid var(--border-light);
+  background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1F2937;
+  color: #0F172A;
   margin-bottom: 14px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.08);
 }
 
 .pin-title {
-  font-size: 21px;
+  font-size: 22px;
   font-weight: 700;
-  color: #111827;
-  letter-spacing: -0.3px;
+  color: #0F172A;
+  letter-spacing: -0.4px;
   margin-bottom: 4px;
 }
 
@@ -1308,9 +1355,10 @@ body {
 }
 
 .pin-dot.filled {
-  background: #111827;
-  border-color: #111827;
-  transform: scale(1.15);
+  background: linear-gradient(135deg, #18181B 0%, #3F3F46 100%);
+  border-color: #18181B;
+  transform: scale(1.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .pin-dots.error {
@@ -1353,19 +1401,19 @@ body {
 }
 
 .pin-key {
-  width: 64px;
-  height: 64px;
+  width: 66px;
+  height: 66px;
   border-radius: 50%;
   background: #FFFFFF;
-  border: 1px solid #E5E7EB;
-  font-size: 23px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  font-size: 24px;
   font-weight: 600;
-  color: #111827;
+  color: #0F172A;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -1373,20 +1421,21 @@ body {
 }
 
 .pin-key:hover {
-  background: #F9FAFB;
-  border-color: #D1D5DB;
-  transform: scale(1.05);
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  transform: translateY(-1.5px) scale(1.04);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 .pin-key:active,
 .pin-key.active-press {
-  background: #E5E7EB;
+  background: #E2E8F0;
   transform: scale(0.92);
 }
 
 .pin-key-empty {
-  width: 64px;
-  height: 64px;
+  width: 66px;
+  height: 66px;
 }
 
 .pin-back-key {
@@ -1397,13 +1446,14 @@ body {
 }
 
 .pin-back-key:hover {
-  background: #F3F4F6;
+  background: rgba(241, 245, 249, 0.9);
   border-color: transparent;
+  transform: translateY(-1px);
 }
 
 .pin-back-key:active,
 .pin-back-key.active-press {
-  background: #E5E7EB;
+  background: #E2E8F0;
   transform: scale(0.92);
 }
 
