@@ -1,15 +1,6 @@
-# LiveChat — Private 2-User Real-Time Chat
+# LiveChat — Real-Time Chat
 
-A private real-time chat application for **Jisu** and **Jenu**.
-
-## Features
-- 🔐 PIN-protected login (Jisu: `1470`, Jenu: `3690`)
-- 💬 Real-time messaging via WebSocket
-- ⌨️ Live typing indicators with keypress sounds
-- 📷 Image sharing
-- 🎤 Real-time voice note recording & playback (live WebSocket + persisted to external PHP receiver & SQLite)
-- 🎙️ Dynamic action button (Mic mode before typing, Send mode when typing)
-- 🔇 Sound mute/unmute toggle
+A private, real-time 2-user messaging web application built with FastAPI and WebSockets.
 
 ## Local Development
 
@@ -18,9 +9,7 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Open `http://localhost:8000` in two browser tabs.
-- Tab 1: Enter PIN `1470` (Jisu)
-- Tab 2: Enter PIN `3690` (Jenu)
+Open `http://localhost:8000` in your browser.
 
 ## Deploy on Render
 
